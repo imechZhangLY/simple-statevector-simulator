@@ -10,7 +10,7 @@ dist/
 .eggs/
 
 # Virtual environments
-.venv/
+.venv*/
 venv/
 env/
 .conda/
@@ -26,7 +26,12 @@ htmlcov/
 .nox/
 
 # Editors and IDEs
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/dev.env
+!.vscode/bootstrap-env.ps1
 .idea/
 *.code-workspace
 

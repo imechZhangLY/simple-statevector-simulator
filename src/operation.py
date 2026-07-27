@@ -43,5 +43,14 @@ class Operation:
     def matrix(self) -> ComplexMatrix:
         return self.gate.dagger_matrix if self.is_dagger else self.gate.matrix
 
+    @property
+    def matrix_key(self) -> tuple[str, int, tuple[float, ...], bool]:
+        return (
+            self.gate.name,
+            self.gate.num_qubits,
+            self.parameters,
+            self.is_dagger,
+        )
+
     def dagger(self) -> "Operation":
         return Operation(self.gate, self.qubits, not self.is_dagger)

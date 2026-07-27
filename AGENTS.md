@@ -15,7 +15,10 @@ Implemented:
 - common one-, two-, and three-qubit gate functions;
 - direction-aware metadata intended for future OpenQASM serialization;
 - mutable `StateVector` with generic application of arbitrary local gates;
-- `unittest` coverage for matrices, unitarity, dagger behavior, indexing, entanglement, and input validation.
+- a pluggable `Backend` protocol with `NumpyBackend` and `TorchBackend` implementations, covering CPU and CUDA;
+- a bounded LRU cache of device matrices keyed by `Operation.matrix_key`;
+- backend benchmarks under `benchmarks/`;
+- `unittest` coverage for matrices, unitarity, dagger behavior, indexing, entanglement, backend conformance, and input validation.
 
 Not implemented yet:
 
@@ -31,7 +34,12 @@ Do not describe planned features as implemented.
 ## Repository Layout
 
 ```text
+benchmarks/
+  benchmark_backends.py
 src/
+  backend.py
+  numpy_backend.py
+  torch_backend.py
   gate.py
   operation.py
   single_qubit_gates.py
@@ -50,29 +58,86 @@ The current source layout is intentionally flat. Imports look like:
 from gate import Gate
 from operation import Operation
 from statevector import StateVector
+from numpy_backend import NumpyBackend
 ```
 
 Do not migrate to a nested package or add packaging infrastructure unless the task explicitly calls for it.
 
 ## Environment and Validation
 
-The code requires Python 3.10 or newer and NumPy. Tests use the standard library `unittest`; pytest is not required.
+The project uses two Git-ignored virtual environments whose definitions are committed. Never run project code with the system, conda, or any other interpreter.
 
-Run the complete suite from the repository root in PowerShell:
+| Environment | Purpose | Requirements file |
+|---|---|---|
+| `.venv` | primary environment, CUDA PyTorch | [requirements-torch-cuda.txt](requirements-torch-cuda.txt) |
+| `.venv-cpu` | CPU-only PyTorch comparison | [requirements-torch-cpu.txt](requirements-torch-cpu.txt) |
+
+Both use Python 3.10 and install NumPy from [requirements.txt](requirements.txt).
+
+### Check the environments before debugging
+
+Before running, debugging, or profiling anything, verify both interpreters exist:
+
+```powershell
+Test-Path .\.venv\Scripts\python.exe
+Test-Path .\.venv-cpu\Scripts\python.exe
+```
+
+If either returns `False`, provision it. The bootstrap script creates the environment when it is missing and reinstalls only when the requirements file changed, so it is safe to run every time:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv -Requirements requirements-torch-cuda.txt
+powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv-cpu -Requirements requirements-torch-cpu.txt
+```
+
+Never install packages into an environment ad hoc. Add the dependency to the correct requirements file and re-run the bootstrap script, so the environment stays reproducible from the repository.
+
+### Run tests
+
+Tests use the standard library `unittest`; pytest is not required. Always call the environment interpreter by path instead of a bare `python`:
 
 ```powershell
 $env:PYTHONPATH = Join-Path $PWD 'src'
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
 Run a focused test module with:
 
 ```powershell
 $env:PYTHONPATH = Join-Path $PWD 'src'
-python -m unittest tests.test_statevector -v
+.\.venv\Scripts\python.exe -m unittest tests.test_statevector -v
 ```
 
-After every behavioral change, run the narrowest relevant tests first and then the full suite. Use `numpy.testing.assert_allclose` with an explicit absolute tolerance when expected values include mathematical zeros produced by trigonometric functions.
+After every behavioral change, run the narrowest relevant tests first and then the full suite in `.venv`. Any change touching a backend, `StateVector`, or gate matrices must also pass the full suite in `.venv-cpu`:
+
+```powershell
+$env:PYTHONPATH = Join-Path $PWD 'src'
+.\.venv-cpu\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+Use `numpy.testing.assert_allclose` with an explicit absolute tolerance when expected values include mathematical zeros produced by trigonometric functions.
+
+### Benchmarks
+
+Performance claims must be measured, not assumed. [benchmarks/benchmark_backends.py](benchmarks/benchmark_backends.py) adds `src` to `sys.path` itself, so it runs without `PYTHONPATH`:
+
+```powershell
+.\.venv\Scripts\python.exe benchmarks\benchmark_backends.py --qubits 16,20,22
+```
+
+Benchmarks are not part of the test suite and must stay out of `tests/`. When adding one, keep the existing methodology:
+
+- call `torch.cuda.synchronize()` before reading the clock, or GPU timings measure only kernel launches;
+- run an untimed warm-up pass so CUDA context creation and cache population are excluded;
+- report the minimum across repeats, not the mean;
+- construct gate objects outside the timed region unless construction is what you are measuring;
+- make cache hits and misses deterministic by controlling cache capacity. Reusing one operation list across repeats silently turns every workload into a cache hit.
+
+### GPU notes
+
+The reference machine has a Quadro P620: Pascal, compute capability 6.1, 2 GiB VRAM. The installed CUDA build ships `sm_61` kernels and executes both `complex64` and `complex128`, but Pascal runs FP64 at 1/32 rate, so GPU work should default to `complex64`. Two GiB of VRAM limits GPU statevectors to roughly 24 qubits once temporaries are counted.
+
+Never import torch at module import time in `src/`, and never assume CUDA is present. Torch-dependent tests must skip cleanly when torch or a CUDA device is unavailable, so the suite still passes in a NumPy-only environment.
 
 ## Non-Negotiable Mathematical Conventions
 
@@ -108,9 +173,9 @@ The `StateVector.apply()` axis permutation reconciles this local convention with
 
 ### Entanglement
 
-`StateVector.apply()` must always operate on the complete amplitude tensor. Its temporary matrix has shape `2**k x 2**(n-k)` and still contains all `2**n` amplitudes. It does not extract an independent pure state for the target qubits.
+Gate application must always operate on the complete amplitude tensor. The backend's temporary matrix has shape `2**k x 2**(n-k)` and still contains all `2**n` amplitudes. It does not extract an independent pure state for the target qubits.
 
-Any rewrite of the application algorithm must retain tests for:
+Any rewrite of the application algorithm, in any backend, must retain tests for:
 
 - applying a local gate to a Bell state;
 - non-adjacent qubits such as `CX(2, 0)`;
@@ -147,15 +212,31 @@ Direction-aware `name`, `qasm_name`, `parameters`, and `matrix` are delegated to
 
 ### StateVector
 
-`StateVector` owns amplitudes and local gate application. It currently:
+`StateVector` owns quantum semantics and validation, not numerics. It currently:
 
 - initializes to `|0...0>`;
 - validates optional normalized amplitudes;
-- exposes a read-only amplitude view and a probability vector;
-- applies operations in place and returns `self`;
-- supports independent copying.
+- exposes a read-only `numpy.complex128` amplitude view and a probability vector;
+- checks that operation qubits are inside the register;
+- delegates gate application to its backend and returns `self`;
+- supports independent copying that preserves the backend.
 
-Do not add gate-specific execution branches to `StateVector.apply()`. The generic tensor-axis algorithm must handle every gate arity unless profiling demonstrates a justified optimization.
+`amplitudes` must always return read-only `numpy.complex128`, regardless of backend. Backend-native arrays are exposed separately through `raw_amplitudes`.
+
+### Backend
+
+`Backend` is a `Protocol` in [src/backend.py](src/backend.py) that owns all numerical work: state creation, conversion, finiteness, squared norm, gate application, probabilities, copying, and NumPy conversion.
+
+Rules:
+
+- backends must contain no quantum semantics; endianness, qubit bounds, and normalization checks stay in `StateVector`;
+- device and dtype are backend constructor parameters, never new `StateVector` subclasses;
+- backends implement the full `apply` algorithm, not thin array-namespace forwarding, so each library can use its own optimal execution path;
+- every backend must produce results identical to `NumpyBackend` within tolerance;
+- new backends must be added to `available_backends()` in [tests/test_backend.py](tests/test_backend.py);
+- optional dependencies such as torch must be imported lazily and must not be added to [requirements.txt](requirements.txt).
+
+Do not add gate-specific execution branches to any backend's `apply()`. The generic tensor-axis algorithm must handle every gate arity unless profiling demonstrates a justified optimization.
 
 ## Gate Function Conventions
 
@@ -233,9 +314,10 @@ Every new mathematical behavior needs a focused regression test. Favor semantic 
 - `U.conj().T @ U == I`;
 - correct OpenQASM metadata in both directions;
 - correct behavior on entangled states and non-adjacent qubits;
+- identical results across every registered backend;
 - rejection of malformed dimensions, duplicate qubits, invalid indices, and non-finite parameters.
 
-Do not weaken numeric tolerances broadly to hide a formula or ordering error.
+Do not weaken numeric tolerances broadly to hide a formula or ordering error. Reduced-precision backends may use a looser tolerance, but only in the shared backend conformance tests.
 
 ## Recommended Next Work
 

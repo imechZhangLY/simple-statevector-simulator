@@ -10,6 +10,8 @@ Simple StateVector Simulator 是一个使用 Python 和 NumPy 实现的轻量级
 - 单比特、双比特和三比特量子门；
 - 任意 qubit 子集上的通用门应用；
 - dagger 操作；
+- 可插拔的计算后端，量子语义与数值执行分离；
+- NumPy 与 PyTorch 后端，支持 CPU 与 CUDA；
 - 可供 OpenQASM 导出使用的结构化元数据。
 
 当前不包含：
@@ -25,9 +27,14 @@ Simple StateVector Simulator 是一个使用 Python 和 NumPy 实现的轻量级
 
 ```text
 simple-statevector-simulator/
+├── benchmarks/
+│   └── benchmark_backends.py
 ├── docs/
 │   └── architecture.md
 ├── src/
+│   ├── backend.py
+│   ├── numpy_backend.py
+│   ├── torch_backend.py
 │   ├── gate.py
 │   ├── operation.py
 │   ├── single_qubit_gates.py
@@ -35,6 +42,7 @@ simple-statevector-simulator/
 │   ├── three_qubit_gates.py
 │   └── statevector.py
 └── tests/
+    ├── test_backend.py
     ├── test_gate.py
     ├── test_operation.py
     ├── test_single_qubit_gates.py
@@ -53,6 +61,9 @@ flowchart TD
     GateFunctions --> Operation
     Operation --> Gate
     StateVector --> Operation
+    StateVector --> Backend
+    Backend --> NumpyBackend
+    Backend --> TorchBackend
     Circuit[Circuit 规划中] --> Operation
     Simulator[StateVectorSimulator 规划中] --> Circuit
     Simulator --> StateVector
@@ -63,12 +74,12 @@ flowchart TD
 当前核心依赖方向为：
 
 ```text
-Gate <- Operation <- StateVector
+Gate <- Operation <- StateVector -> Backend
   ^         ^
   └── 门函数 ┘
 ```
 
-`Gate` 不依赖 `Operation`。用户通过门函数构造 operation，例如：
+`Gate` 不依赖 `Operation`，`Backend` 不依赖任何量子概念。用户通过门函数构造 operation，例如：
 
 ```python
 operation = H(0)
@@ -130,7 +141,10 @@ Operation = Gate + qubits + direction
 - `name`；
 - `qasm_name`；
 - `parameters`；
-- `matrix`。
+- `matrix`；
+- `matrix_key`。
+
+`matrix_key` 是 `(name, num_qubits, parameters, is_dagger)` 的值元组，供后端缓存转换后的矩阵。它必须同时包含参数和方向：仅用 `name` 会让 `RX(0.3)` 与 `RX(0.7)` 冲突，仅用参数会让 `S` 与 `S†` 冲突，两者都会静默返回错误矩阵。
 
 `dagger()` 不计算矩阵，也不修改参数，而是返回共享同一个 `Gate`、方向相反的新 `Operation`：
 
@@ -172,7 +186,58 @@ probabilities = state.probabilities
 copied = state.copy()
 ```
 
-`apply()` 原地更新振幅并返回 `self`，因此支持链式调用。`amplitudes` 对外提供只读视图，`probabilities` 返回每个计算基态的概率。
+`apply()` 原地更新振幅并返回 `self`，因此支持链式调用。`amplitudes` 始终返回只读的 `numpy.complex128` 数组，`probabilities` 返回每个计算基态的概率。
+
+`StateVector` 只拥有量子语义和校验，具体数值运算全部委托给后端：
+
+```python
+state = StateVector(3, backend=NumpyBackend(dtype=np.complex64))
+
+state.backend           # 当前后端
+state.raw_amplitudes    # 后端原生数组
+state.amplitudes        # 始终是只读 numpy complex128
+```
+
+不传 `backend` 时使用模块级的 `DEFAULT_BACKEND`，即 `NumpyBackend()`。
+
+### 4.4 Backend
+
+`Backend` 是一个 `Protocol`，描述执行 statevector 模拟所需的全部数值能力：
+
+| 方法 | 职责 |
+|---|---|
+| `zero_state` | 构造 $\|0\cdots0\rangle$ |
+| `as_amplitudes` | 将输入转换为后端数组并复制 |
+| `shape` | 返回振幅形状 |
+| `is_finite` | 判断振幅是否全为有限值 |
+| `squared_norm` | 返回 $\langle\psi\|\psi\rangle$ |
+| `apply` | 将局部门矩阵作用到振幅上 |
+| `probabilities` | 返回 `float64` 概率向量 |
+| `copy` | 复制振幅 |
+| `to_numpy` | 转换为 `numpy.complex128` |
+
+这里故意选择了**较粗的粒度**：后端实现完整的 `apply` 算法，而不是只转发 `reshape` / `transpose` / `matmul` 等原语。原因是不同后端的最优执行路径本身就不同（例如 `einsum`、原地写入、算子融合或自定义 kernel），若后端只是薄薄的数组命名空间，就无法利用这些差异，而且各库 API 的不一致（如 `transpose` 与 `permute`）会不断泄露。
+
+同时，**设备和精度是后端的构造参数，不是新的量子态类型**。否则 `NumpyStateVector`、`TorchCpuStateVector`、`TorchGpuStateVector` 会随着库、设备、dtype 三个正交维度组合爆炸。
+
+后端不得包含任何量子语义：端序约定、qubit 越界、归一化检查均由 `StateVector` 负责。
+
+### 4.5 TorchBackend
+
+`TorchBackend` 在构造函数内惰性导入 torch，因此模块导入期不依赖 torch，没有安装时其他代码仍可正常工作：
+
+```python
+StateVector(3, backend=TorchBackend(device="cuda", dtype="complex64"))
+```
+
+实现要点：
+
+- **矩阵缓存**。`Gate` 存的是 numpy 矩阵，若每次 `apply()` 都做 host→device 拷贝，GPU 会显著变慢。缓存按 `operation.matrix_key` 建表。
+- **缓存必须有容量上限**。值语义的 key 不会随临时 `Gate` 回收而失效，参数扫描会无限增长并在 GPU 上 OOM，因此使用带 LRU 淘汰的 `OrderedDict`。淘汰只影响性能，不得影响结果。
+- **只读矩阵**。`Gate` 的矩阵是只读的，直接 `torch.as_tensor` 会告警并可能共享内存，因此转换前先做一次 numpy 拷贝；有缓存时这个代价每个 key 只付一次。
+- **API 差异**。torch 的多轴置换是 `permute`，且 `permute` 后必须用 `reshape` 而非 `view`。
+- **只读语义**。torch 张量没有 `writeable=False`，因此 `amplitudes` 仍统一返回只读 numpy，性能敏感路径使用 `raw_amplitudes`。
+- **可选依赖**。torch 不在 [requirements.txt](../requirements.txt) 中，而是由单独的 torch requirements 文件安装。
 
 ## 5. Qubit 与矩阵约定
 
@@ -217,9 +282,19 @@ $$
 
 这些约定必须在门定义、statevector 执行、测量和序列化中保持一致。
 
-## 6. StateVector 门应用算法
+## 6. 门应用算法
 
-`StateVector.apply()` 使用统一的张量轴重排算法，不为任何具体门编写特殊执行路径。
+门应用算法位于后端（当前为 `NumpyBackend.apply()`）。`StateVector.apply()` 只做 qubit 越界检查，然后委托给后端：
+
+```python
+self._amplitudes = self._backend.apply(
+    self._amplitudes,
+    operation,
+    self._num_qubits,
+)
+```
+
+后端使用统一的张量轴重排算法，不为任何具体门编写特殊执行路径。
 
 对于作用在 $k$ 个 qubit 上的门：
 
@@ -250,6 +325,8 @@ $$
 $$
 
 该算法也支持非连续 qubit，例如 `CX(2, 0)`。
+
+任何新后端必须在这一算法语义下与 `NumpyBackend` 结果一致，具体实现方式不限。
 
 ## 7. 已实现量子门
 
@@ -326,7 +403,7 @@ $$
 
 ## 9. 精度与内存
 
-当前所有矩阵和 statevector 振幅使用 `numpy.complex128`，即实部和虚部均使用双精度浮点数。长度为 $2^n$ 的 statevector 基础内存约为：
+振幅精度由后端决定，默认为 `numpy.complex128`，即实部和虚部均使用双精度浮点数。长度为 $2^n$ 的 statevector 基础内存约为：
 
 $$
 2^n \times 16\ \text{bytes}
@@ -340,7 +417,33 @@ $$
 | 25 | 512 MiB |
 | 30 | 16 GiB |
 
-实际执行还需要张量视图或临时计算结果。第一版固定使用 `complex128` 以优先保证数值稳定性；未来可在模拟器层提供 `complex64` 与 `complex128` 选项。
+实际执行还需要张量视图或临时计算结果。`Gate` 仍固定以 `complex128` 存储矩阵，作为与后端无关的参考定义；后端在 `apply()` 中将其转换为自身 dtype。使用 `complex64` 可以减半内存并在 GPU 上明显提速，但测试容差需相应放宽。
+
+### 9.1 实测结果
+
+在 Quadro P620（Pascal, sm_61, 2 GiB）上，22 qubit 时每个门的 `apply()` 耗时（微秒，取最小值）：
+
+| backend | 1q `H` | 2q `CX` | 3q `CCX` |
+|---|---:|---:|---:|
+| numpy:complex128 | 73958 | 123499 | 147981 |
+| numpy:complex64 | 32454 | 58390 | 65671 |
+| torch:cpu:complex64 | 12004 | 39015 | 44049 |
+| torch:cuda:complex128 | 16686 | 77436 | 41784 |
+| torch:cuda:complex64 | 7331 | 7424 | 9948 |
+
+两个结论：
+
+- `torch:cuda:complex64` 最快，比 `numpy:complex128` 快约 17 倍；
+- **GPU 上的 `complex128` 是陷阱**。双比特门慢到 77 ms，是 `complex64` 的 10 倍，甚至比 torch CPU 更慢，这是 Pascal FP64 1/32 速率的直接后果。
+
+矩阵缓存的效果（n = 4，通过缓存容量强制命中与未命中）：
+
+| backend | 命中 | 未命中 |
+|---|---:|---:|
+| torch:cpu:complex64 | 44.2 | 74.4 |
+| torch:cuda:complex64 | 72.6 | 181.7 |
+
+另外，参数门的构造开销远高于常数门：`RX(0.3, 0)` 约 22 微秒，而 `H(0)`、`CX(0, 1)`、`CCX(0, 1, 2)` 均在 2–3 微秒，因为参数门每次都要新建两个矩阵并走完 `Gate` 的全部校验。
 
 ## 10. 错误边界
 
@@ -351,6 +454,7 @@ $$
 | `Gate` | 名称、qubit 数量、参数类型与有限性、矩阵形状与有限性 |
 | `Operation` | qubit 数量、整数类型、非负、唯一性 |
 | `StateVector` | qubit 数量、振幅维度、有限性、归一化、operation 是否越界 |
+| `Backend` | 仅 dtype 合法性等自身配置，不承担量子语义校验 |
 | 门函数 | 角度必须是有限实数 |
 
 目前 `Gate` 不主动验证矩阵是否幺正。内置门通过测试验证幺正性；未来若支持用户自定义门，可以考虑提供可选的幺正性检查，而不应在性能敏感的每次执行中重复检查。
@@ -368,7 +472,10 @@ $$
 - Bell 态与纠缠态上的局部门应用；
 - 非连续 qubit 上的双比特门；
 - 三比特门应用；
-- StateVector 的复制、归一化与越界检查。
+- StateVector 的复制、归一化与越界检查；
+- 后端一致性（[tests/test_backend.py](../tests/test_backend.py)）。
+
+后端一致性测试是参数化的，会在每个可用后端上重复验证 Bell 态、纠缠态局部门、非相邻 qubit、三比特门和 dagger 还原，并与 `NumpyBackend` 逐点比对。新增后端必须加入 `available_backends()`。
 
 运行全部测试：
 
@@ -447,6 +554,10 @@ src/simple_statevector_simulator/
 ├── gate.py
 ├── operation.py
 ├── statevector.py
+├── backends/
+│   ├── base.py
+│   ├── numpy_backend.py
+│   └── torch_backend.py
 └── gates/
     ├── single.py
     ├── two.py
@@ -471,8 +582,10 @@ state.apply(svs.H(0)).apply(svs.CX(0, 1))
 1. 门的数学定义属于 `Gate`，作用位置属于 `Operation`；
 2. 参数与矩阵共同定义具体 Gate，不能分散到 Operation；
 3. dagger 矩阵和序列化元数据预先存储，不在执行时推断；
-4. StateVector 使用一个通用算法应用任意 $k$-qubit 门；
-5. qubit 端序和局部矩阵基序必须明确且保持一致；
-6. Circuit、执行、测量和序列化保持独立职责；
-7. 先通过测试固定数学语义，再进行性能优化；
-8. 不为单个内置门增加执行器特殊分支，除非 profiling 证明必要。
+4. 量子语义和校验属于 `StateVector`，数值执行属于 `Backend`；
+5. 后端必须用一个通用算法应用任意 $k$-qubit 门；
+6. 设备与精度是后端参数，不得衍生新的 `StateVector` 子类；
+7. qubit 端序和局部矩阵基序必须明确且保持一致；
+8. Circuit、执行、测量和序列化保持独立职责；
+9. 先通过测试固定数学语义，再进行性能优化；
+10. 不为单个内置门增加执行器特殊分支，除非 profiling 证明必要。

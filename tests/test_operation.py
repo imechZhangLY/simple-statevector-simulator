@@ -4,6 +4,8 @@ import numpy as np
 
 from gate import Gate
 from operation import Operation
+from single_qubit_gates import H, RX, RY, S
+from two_qubit_gates import CX
 
 
 class OperationTests(unittest.TestCase):
@@ -68,6 +70,52 @@ class OperationTests(unittest.TestCase):
     def test_rejects_non_integer_qubits(self) -> None:
         with self.assertRaisesRegex(TypeError, "only integers"):
             Operation(self.gate, (1.5,))
+
+
+class OperationMatrixKeyTests(unittest.TestCase):
+    def test_key_is_hashable(self) -> None:
+        cache = {H(0).matrix_key: "h"}
+
+        self.assertEqual(cache[H(1).matrix_key], "h")
+
+    def test_key_ignores_qubit_placement(self) -> None:
+        self.assertEqual(RX(0.3, 0).matrix_key, RX(0.3, 5).matrix_key)
+
+    def test_key_distinguishes_parameters(self) -> None:
+        self.assertNotEqual(RX(0.3, 0).matrix_key, RX(0.7, 0).matrix_key)
+
+    def test_key_distinguishes_dagger_of_constant_gate(self) -> None:
+        operation = S(0)
+
+        self.assertNotEqual(operation.matrix_key, operation.dagger().matrix_key)
+
+    def test_key_distinguishes_gates_sharing_parameters(self) -> None:
+        self.assertNotEqual(RX(0.3, 0).matrix_key, RY(0.3, 0).matrix_key)
+
+    def test_equal_keys_imply_equal_matrices(self) -> None:
+        operations = [
+            H(0),
+            H(1),
+            S(0),
+            S(0).dagger(),
+            RX(0.3, 0),
+            RX(0.3, 2),
+            RX(0.7, 0),
+            RY(0.3, 0),
+            CX(0, 1),
+            CX(2, 0),
+        ]
+
+        matrices: dict[tuple, np.ndarray] = {}
+        for operation in operations:
+            with self.subTest(operation=operation.name):
+                key = operation.matrix_key
+                if key in matrices:
+                    np.testing.assert_array_equal(matrices[key], operation.matrix)
+                else:
+                    matrices[key] = operation.matrix
+
+        self.assertEqual(len(matrices), 7)
 
 
 if __name__ == "__main__":
