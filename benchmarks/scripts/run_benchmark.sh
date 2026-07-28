@@ -22,7 +22,7 @@ usage() {
     cat <<'EOF'
 usage: run_benchmark.sh [options]
 
-  --scenario <cpu-single|cpu-multi|gpu>   default: cpu-single
+  --scenario <cpu-single|cpu-multi|gpu|supa>   default: cpu-single
   --qubits <list>                         default: 4,8,12,16,20
   --repeats <n>                           default: 5
   --skip-install                          reuse the environment as-is
@@ -113,11 +113,6 @@ case "${SCENARIO}" in
         TITLE="qulacs benchmark circuit, GPU"
         MODULES="numpy torch qiskit_aer matplotlib"
         ;;
-    *)
-        echo "unknown scenario: ${SCENARIO}" >&2
-        usage
-        exit 2
-        ;;
     supa)
         ENVIRONMENT_NAME=".venv-bench-supa"
         REQUIREMENTS="requirements-bench-supa.txt"
@@ -126,6 +121,11 @@ case "${SCENARIO}" in
         REFERENCE="qiskit-aer:cpu:complex128"
         TITLE="supa benchmark circuit, CPU ${THREADS} threads"
         MODULES="numpy qulacs qiskit_aer matplotlib"
+        ;;
+    *)
+        echo "unknown scenario: ${SCENARIO}" >&2
+        usage
+        exit 2
         ;;
 esac
 
