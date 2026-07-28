@@ -11,27 +11,18 @@ if TYPE_CHECKING:
 DEFAULT_MATRIX_CACHE_SIZE = 256
 
 
-class TorchBackend:
+class SupaBackend:
     def __init__(
         self,
-        device: Any = "cpu",
         dtype: Any = None,
         matrix_cache_size: int = DEFAULT_MATRIX_CACHE_SIZE,
     ) -> None:
         import torch
-
-        if device == "supa":
-            try:
-                import torch_br
-            except ImportError:
-                raise RuntimeError("No torch_br installed on this machine")
+        import torch_br
 
         self._torch = torch
-        self._device = torch.device(device)
-        if self._device.type == "cuda" and not torch.cuda.is_available():
-            raise RuntimeError("CUDA is not available on this machine")
-        
-        if self._device.type == "supa" and not torch.supa.is_available():
+        self._device = torch.device("cpu")
+        if not torch.supa.is_available() or torch.supa.device_count() == 0:
             raise RuntimeError("SUPA is not available on this machine")
 
         if dtype is None:
@@ -71,14 +62,14 @@ class TorchBackend:
     def zero_state(self, num_qubits: int) -> Amplitudes:
         amplitudes = self._torch.zeros(
             1 << num_qubits, dtype=self._dtype, device=self._device
-        )
+        ).to("supa")
         amplitudes[0] = 1
         return amplitudes
 
     def as_amplitudes(self, amplitudes: Any) -> Amplitudes:
         if isinstance(amplitudes, self._torch.Tensor):
             return amplitudes.detach().clone().to(
-                device=self._device, dtype=self._dtype
+                "supa", dtype=self._dtype
             )
 
         array = np.array(amplitudes, dtype=np.complex128, copy=True)

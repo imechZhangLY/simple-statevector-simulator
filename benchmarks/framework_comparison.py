@@ -214,6 +214,11 @@ def available_implementations(selected: list[str] | None) -> list:
     except ImportError:
         torch = None
 
+    try:
+        import torch_br
+    except ImportError:
+        torch_br = None
+
     if torch is not None:
         from torch_backend import TorchBackend
 
@@ -248,6 +253,27 @@ def available_implementations(selected: list[str] | None) -> list:
                         "ours:torch:cuda:complex64",
                         lambda gates: TorchBackend(
                             device="cuda",
+                            dtype="complex64",
+                            matrix_cache_size=max(gates, 256),
+                        ),
+                    ),
+                ]
+            )
+        if torch_br is not None and torch.supa.is_available():
+            implementations.extend(
+                [
+                    OurImplementation(
+                        "ours:torch:supa:complex128",
+                        lambda gates: TorchBackend(
+                            device="supa",
+                            dtype="complex128",
+                            matrix_cache_size=max(gates, 256),
+                        ),
+                    ),
+                    OurImplementation(
+                        "ours:torch:supa:complex64",
+                        lambda gates: TorchBackend(
+                            device="supa",
                             dtype="complex64",
                             matrix_cache_size=max(gates, 256),
                         ),

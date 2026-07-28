@@ -118,6 +118,15 @@ case "${SCENARIO}" in
         usage
         exit 2
         ;;
+    supa)
+        ENVIRONMENT_NAME=".venv-bench-supa"
+        REQUIREMENTS="requirements-bench-supa.txt"
+        THREADS="$(logical_processors)"
+        IMPLEMENTATIONS="ours:numpy:complex128,ours:torch:cpu:complex128,ours:torch:supa:complex128,ours:torch:supa:complex64,qulacs:cpu:complex128,qiskit-aer:cpu:complex128"
+        REFERENCE="qiskit-aer:cpu:complex128"
+        TITLE="supa benchmark circuit, CPU ${THREADS} threads"
+        MODULES="numpy qulacs qiskit_aer matplotlib"
+        ;;
 esac
 
 PYTHON="${REPOSITORY_ROOT}/${ENVIRONMENT_NAME}/bin/python"
