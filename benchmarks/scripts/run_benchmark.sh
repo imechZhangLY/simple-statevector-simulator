@@ -54,12 +54,13 @@ logical_processors() {
     fi
 }
 
-# Linux ships sha256sum, macOS ships shasum.
+# Linux ships sha256sum, macOS ships shasum. The result is upper-cased so the
+# marker matches the one written by Get-FileHash in run_benchmark.ps1.
 file_hash() {
     if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$1" | awk '{print $1}'
+        sha256sum "$1" | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]'
     else
-        shasum -a 256 "$1" | awk '{print $1}'
+        shasum -a 256 "$1" | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]'
     fi
 }
 

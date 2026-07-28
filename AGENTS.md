@@ -63,6 +63,8 @@ tests/
   test_*.py
 docs/
   architecture.md
+  api.md
+  gates.md
 ```
 
 The current source layout is intentionally flat. Imports look like:
@@ -101,6 +103,13 @@ If either returns `False`, provision it. The bootstrap script creates the enviro
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv -Requirements requirements-torch-cuda.txt
 powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv-cpu -Requirements requirements-torch-cpu.txt
+```
+
+On Linux and macOS use the bash counterpart, which defaults to the CUDA build on Linux and to [requirements-torch-macos.txt](requirements-torch-macos.txt) on macOS. The `+cu126` and `+cpu` wheels are published for Linux and Windows only, so macOS must use the plain PyPI build:
+
+```bash
+bash .vscode/bootstrap-env.sh --environment-name .venv
+bash .vscode/bootstrap-env.sh --environment-name .venv-cpu --requirements requirements-torch-cpu.txt
 ```
 
 Never install packages into an environment ad hoc. Add the dependency to the correct requirements file and re-run the bootstrap script, so the environment stays reproducible from the repository.

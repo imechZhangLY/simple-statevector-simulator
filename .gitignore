@@ -32,6 +32,7 @@ htmlcov/
 !.vscode/extensions.json
 !.vscode/dev.env
 !.vscode/bootstrap-env.ps1
+!.vscode/bootstrap-env.sh
 .idea/
 *.code-workspace
 
@@ -39,3 +40,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Simulation output written by the quantum-simulator skill
+results/

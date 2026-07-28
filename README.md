@@ -63,9 +63,87 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 
 powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv-cpu -Requirements requirements-torch-cpu.txt
 ```
 
+Linux 与 macOS 使用等价的 bash 脚本。它在 Linux 上默认选择 CUDA 版，在 macOS 上默认选择 [requirements-torch-macos.txt](requirements-torch-macos.txt)：`+cu126` 与 `+cpu` 这类 wheel 只为 Linux 和 Windows 发布，macOS 必须用 PyPI 上的普通版本。
+
+```bash
+bash .vscode/bootstrap-env.sh --environment-name .venv
+bash .vscode/bootstrap-env.sh --environment-name .venv-cpu --requirements requirements-torch-cpu.txt
+```
+
 脚本是幂等的：环境不存在时创建，依赖文件未变化时直接跳过。用 VS Code 打开工作区会自动触发这两个任务。
 
+不确定该用哪个脚本时，交给分发器自动判断平台与 CUDA（见下一节）。
+
 torch 是可选依赖，只安装 [requirements.txt](requirements.txt) 时 NumPy 后端可正常工作，相关测试会自动跳过。
+
+## 用 Agent 编写程序
+
+仓库自带一个 skill，放在 [.agents/skills/quantum-simulator/](.agents/skills/quantum-simulator/)。VS Code、opencode 等支持 Agent Skills 的工具打开本目录即可发现它，无需额外配置。`.agents/` 是厂商中立的约定位置，与仓库已有的 [AGENTS.md](AGENTS.md) 一致。
+
+直接用自然语言描述需求即可，例如：
+
+```text
+构造一个 3 qubit 的 GHZ 态，采样 2000 次
+用 QFT 变换 |5>，把振幅向量导出来
+算一下 Bell 态上 Z0Z1 的期望值
+```
+
+也可以在聊天框输入 `/quantum-simulator` 显式调用。
+
+skill 把工作拆成三步：
+
+**1. 初始化环境。** 分发器自行探测平台与 CUDA，再调用对应的引导脚本：
+
+```powershell
+python .agents/skills/quantum-simulator/scripts/setup_environment.py
+```
+
+| 平台 | CUDA | 脚本 | 依赖文件 |
+|---|---|---|---|
+| Windows | 有 | `bootstrap-env.ps1` | `requirements-torch-cuda.txt` |
+| Windows | 无 | `bootstrap-env.ps1` | `requirements-torch-cpu.txt` |
+| Linux | 有 | `bootstrap-env.sh` | `requirements-torch-cuda.txt` |
+| Linux | 无 | `bootstrap-env.sh` | `requirements-torch-cpu.txt` |
+| macOS | — | `bootstrap-env.sh` | `requirements-torch-macos.txt` |
+
+加 `--print-only` 只报告判断结果而不改动任何东西，`--force-cpu` 跳过 CUDA 探测。CUDA 用 `nvidia-smi` 探测，因为此时 torch 还没装上，无法靠 import 判断。
+
+**2. 编写代码。** agent 依据 [docs/api.md](docs/api.md) 和 [docs/gates.md](docs/gates.md) 生成程序，而不是靠记忆猜门名和参数顺序——这两份文档的内容是对照代码实测生成的。
+
+**3. 运行并整理结果。** 用 venv 中的解释器执行，再按诉求分流输出：
+
+| 诉求 | 输出 |
+|---|---|
+| 采样 | 全量写入 `results/sampling.csv`，前 10 条打印到对话 |
+| 期望值 | 直接打印到对话，不落盘 |
+| 振幅向量 | 写入 `results/amplitudes.json` |
+
+CSV 的 key 已从整数转成二进制串，按次数从大到小排序，次数为 0 的结果不输出。`results/` 已加入 `.gitignore`。
+
+格式化逻辑集中在 [qsim_report.py](.agents/skills/quantum-simulator/scripts/qsim_report.py)，手写程序也可以直接复用：
+
+```powershell
+$env:PYTHONPATH = "$PWD\src;$PWD\.agents\skills\quantum-simulator\scripts"
+.\.venv\Scripts\python.exe your_program.py
+```
+
+```python
+from qsim_report import write_sampling_csv, format_rows
+
+path, top = write_sampling_csv(state.sample(2000), state.num_qubits)
+print(format_rows(top))
+```
+
+打印到对话的表格形如：
+
+```text
+bitstring     count   probability
+000             979      0.489500
+011             945      0.472500
+100              40      0.020000
+```
+
+两点提醒：`bitstring` 列在 Excel 中可能被当成数字而丢掉前导零，程序化读回时请用 `index` 列；振幅 JSON 是全量 $2^n$ 条记录，20 qubit 时约 100 MB，大寄存器应改用采样或期望值。
 
 ## 运行测试
 
@@ -74,7 +152,7 @@ $env:PYTHONPATH = Join-Path $PWD 'src'
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-当前 134 个测试全部通过。其中后端一致性测试是参数化的，会在每个可用后端上重复验证 Bell 态、纠缠态局部门、非相邻 qubit、三比特门以及 dagger 还原。
+当前 162 个测试全部通过（1 个在缺少 CUDA 时跳过）。其中后端一致性测试是参数化的，会在每个可用后端上重复验证 Bell 态、纠缠态局部门、非相邻 qubit、三比特门以及 dagger 还原。
 
 ## 示例
 
@@ -224,7 +302,9 @@ program.measurements   # ((0, 0), (1, 1))
 
 参数表达式（`pi/2`、`sqrt(4)` 等）用 `ast` 白名单求值，**不使用 `eval()`**，因此解析来路不明的文件不会执行任意代码。
 
-## 性能基准```powershell
+## 性能基准
+
+```powershell
 .\.venv\Scripts\python.exe benchmarks\benchmark_backends.py --qubits 16,20,22
 ```
 
@@ -248,5 +328,7 @@ GPU 上 `complex64` 最快，比 `numpy:complex128` 快约 17 倍。但 GPU 上�
 
 ## 文档
 
+- [docs/api.md](docs/api.md)：公开类型与函数的签名、语义与异常
+- [docs/gates.md](docs/gates.md)：全部已实现量子门、矩阵与 dagger 元数据
 - [docs/architecture.md](docs/architecture.md)：完整架构、数据模型、算法与设计决策
 - [AGENTS.md](AGENTS.md)：面向 coding agent 的开发约束

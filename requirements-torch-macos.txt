@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# macOS builds are published on PyPI without a local version suffix; the
+# "+cpu" wheels on the PyTorch index exist only for Linux and Windows.
+torch==2.13.0
