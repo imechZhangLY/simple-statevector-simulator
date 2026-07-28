@@ -126,6 +126,9 @@ class TorchBackend:
     def copy(self, amplitudes: Amplitudes) -> Amplitudes:
         return amplitudes.clone()
 
+    def inner_product(self, left: Amplitudes, right: Amplitudes) -> complex:
+        return complex(self._torch.vdot(left, right))
+
     def to_numpy(self, amplitudes: Amplitudes) -> ComplexVector:
         return (
             amplitudes.detach()

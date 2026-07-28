@@ -5,6 +5,7 @@ import numpy as np
 
 from backend import Amplitudes, Backend, ComplexVector, ProbabilityVector
 from numpy_backend import NumpyBackend
+from observable import Observable
 from operation import Operation
 
 DEFAULT_BACKEND: Backend = NumpyBackend()
@@ -77,6 +78,47 @@ class StateVector:
             self._num_qubits,
         )
         return self
+
+    def inner_product(self, other: "StateVector") -> complex:
+        if other.num_qubits != self._num_qubits:
+            raise ValueError(
+                f"statevectors must have the same number of qubits, "
+                f"but received {self._num_qubits} and {other.num_qubits}"
+            )
+
+        return self._backend.inner_product(
+            self._amplitudes,
+            self._backend.as_amplitudes(other.raw_amplitudes),
+        )
+
+    def expectation(self, observable: "Observable") -> float:
+        total = 0.0
+        for term in observable:
+            transformed = self.copy()
+            for operation in term.operations:
+                transformed.apply(operation)
+            total += term.coefficient * self.inner_product(transformed).real
+        return total
+
+    def sample(
+        self,
+        shots: int,
+        generator: "np.random.Generator | None" = None,
+    ) -> dict[int, int]:
+        if not isinstance(shots, Integral) or isinstance(shots, bool):
+            raise TypeError("shots must be an integer")
+        if shots <= 0:
+            raise ValueError("shots must be positive")
+
+        probabilities = self.probabilities
+        probabilities = probabilities / probabilities.sum()
+        generator = np.random.default_rng() if generator is None else generator
+
+        outcomes = generator.choice(
+            probabilities.size, size=int(shots), p=probabilities
+        )
+        values, counts = np.unique(outcomes, return_counts=True)
+        return {int(value): int(count) for value, count in zip(values, counts)}
 
     def copy(self) -> "StateVector":
         return StateVector(

@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from numpy_backend import NumpyBackend
+from observable import Observable
 from single_qubit_gates import H, RX, X
 from statevector import StateVector
 from three_qubit_gates import CCX
@@ -192,6 +193,53 @@ class BackendConformanceTests(unittest.TestCase):
             with self.subTest(backend=backend.name):
                 with self.assertRaisesRegex(IndexError, "outside"):
                     StateVector(2, backend=backend).apply(X(2))
+
+    def test_inner_product_of_normalized_state_is_one(self) -> None:
+        for backend in available_backends():
+            with self.subTest(backend=backend.name):
+                state = (
+                    StateVector(2, backend=backend).apply(H(0)).apply(CX(0, 1))
+                )
+
+                self.assertAlmostEqual(
+                    abs(state.inner_product(state)), 1.0, places=5
+                )
+
+    def test_expectation_matches_reference_values(self) -> None:
+        for backend in available_backends():
+            with self.subTest(backend=backend.name):
+                superposition = StateVector(1, backend=backend).apply(H(0))
+                bell = (
+                    StateVector(2, backend=backend).apply(H(0)).apply(CX(0, 1))
+                )
+
+                self.assertAlmostEqual(
+                    superposition.expectation(Observable([(1.0, {0: "Z"})])),
+                    0.0,
+                    places=5,
+                )
+                self.assertAlmostEqual(
+                    bell.expectation(Observable([(1.0, {0: "Z", 1: "Z"})])),
+                    1.0,
+                    places=5,
+                )
+                self.assertAlmostEqual(
+                    bell.expectation(Observable([(1.0, {0: "X", 1: "X"})])),
+                    1.0,
+                    places=5,
+                )
+
+    def test_sampling_only_returns_supported_outcomes(self) -> None:
+        for backend in available_backends():
+            with self.subTest(backend=backend.name):
+                state = (
+                    StateVector(2, backend=backend).apply(H(0)).apply(CX(0, 1))
+                )
+
+                counts = state.sample(200, np.random.default_rng(0))
+
+                self.assertEqual(set(counts), {0, 3})
+                self.assertEqual(sum(counts.values()), 200)
 
 
 class NumpyBackendTests(unittest.TestCase):

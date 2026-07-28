@@ -12,15 +12,20 @@ Simple StateVector Simulator 是一个使用 Python 和 NumPy 实现的轻量级
 - dagger 操作；
 - 可插拔的计算后端，量子语义与数值执行分离；
 - NumPy 与 PyTorch 后端，支持 CPU 与 CUDA；
+- `Circuit` 电路结构与电路级 dagger；
+- `StateVectorSimulator` 执行层；
+- 多次采样（不破坏量子态）；
+- 加权 Pauli 串可观测量与期望值；
+- OpenQASM 2 导出与解析；
 - 可供 OpenQASM 导出使用的结构化元数据。
 
 当前不包含：
 
 - 密度矩阵和混合态；
 - 噪声信道；
-- 测量和采样；
-- Circuit 与模拟器执行器；
-- OpenQASM 解析器和导出器；
+- 投影测量与态坦缩（项目有意不提供，见 4.7）；
+- 电路中间测量（测量不能作为 operation 写入 `Circuit`）；
+- OpenQASM 3、用户自定义 `gate` 声明、`reset` 与经典条件语句；
 - tensor network、stabilizer 等其他模拟后端。
 
 ## 2. 目录结构
@@ -37,15 +42,23 @@ simple-statevector-simulator/
 │   ├── torch_backend.py
 │   ├── gate.py
 │   ├── operation.py
+│   ├── circuit.py
+│   ├── observable.py
+│   ├── qasm_exporter.py
+│   ├── qasm_parser.py
+│   ├── simulator.py
 │   ├── single_qubit_gates.py
 │   ├── two_qubit_gates.py
 │   ├── three_qubit_gates.py
 │   └── statevector.py
 └── tests/
     ├── test_backend.py
+    ├── test_circuit.py
     ├── test_gate.py
+    ├── test_observable.py
     ├── test_operation.py
     ├── test_single_qubit_gates.py
+    ├── test_simulator.py
     ├── test_two_qubit_gates.py
     ├── test_three_qubit_gates.py
     └── test_statevector.py
@@ -64,8 +77,10 @@ flowchart TD
     StateVector --> Backend
     Backend --> NumpyBackend
     Backend --> TorchBackend
-    Circuit[Circuit 规划中] --> Operation
-    Simulator[StateVectorSimulator 规划中] --> Circuit
+    Circuit --> Operation
+    Observable --> Operation
+    StateVector --> Observable
+    Simulator[StateVectorSimulator] --> Circuit
     Simulator --> StateVector
     Exporter[OpenQASM Exporter 规划中] --> Circuit
     Exporter --> Operation
@@ -214,6 +229,7 @@ state.amplitudes        # 始终是只读 numpy complex128
 | `apply` | 将局部门矩阵作用到振幅上 |
 | `probabilities` | 返回 `float64` 概率向量 |
 | `copy` | 复制振幅 |
+| `inner_product` | 返回 $\langle a\|b\rangle$ |
 | `to_numpy` | 转换为 `numpy.complex128` |
 
 这里故意选择了**较粗的粒度**：后端实现完整的 `apply` 算法，而不是只转发 `reshape` / `transpose` / `matmul` 等原语。原因是不同后端的最优执行路径本身就不同（例如 `einsum`、原地写入、算子融合或自定义 kernel），若后端只是薄薄的数组命名空间，就无法利用这些差异，而且各库 API 的不一致（如 `transpose` 与 `permute`）会不断泄露。
@@ -238,6 +254,152 @@ StateVector(3, backend=TorchBackend(device="cuda", dtype="complex64"))
 - **API 差异**。torch 的多轴置换是 `permute`，且 `permute` 后必须用 `reshape` 而非 `view`。
 - **只读语义**。torch 张量没有 `writeable=False`，因此 `amplitudes` 仍统一返回只读 numpy，性能敏感路径使用 `raw_amplitudes`。
 - **可选依赖**。torch 不在 [requirements.txt](../requirements.txt) 中，而是由单独的 torch requirements 文件安装。
+
+### 4.6 Circuit
+
+`Circuit` 只保存电路结构，不执行任何 statevector 计算：
+
+```python
+circuit = (
+    Circuit(3)
+    .append(H(0))
+    .append(CX(0, 1))
+    .append(CCX(0, 1, 2))
+)
+```
+
+职责：
+
+- 保存有序的 operation 序列；
+- 校验 operation 的 qubit 在寄存器范围内（`Operation` 只保证非负和唯一，上界只有电路知道）；
+- 提供电路级 dagger。
+
+`operations` 返回 tuple 快照，因此外部无法绕过 `append()` 的校验修改内部列表。`Circuit` 同时实现 `__len__` 和 `__iter__`，供未来的执行器直接遍历。
+
+`Circuit.dagger()` 必须反转顺序，并对每个 operation 取 dagger：
+
+$$
+(U_n\cdots U_2U_1)^\dagger
+=
+U_1^\dagger U_2^\dagger\cdots U_n^\dagger
+$$
+
+只对每个 operation 取 dagger 而不反转顺序，在门不对易时会得到错误结果，因此测试中同时验证了正确实现能恢复初态、而不反转的实现不能。
+
+#### 电路中不允许出现测量
+
+**`Circuit` 只允许包含酉演化，测量只能在电路执行完毕后进行。**
+
+这不仅是约定，而是结构上的保证：`Circuit.append()` 只接受 `Operation`，而 `Operation` 必须绑定一个 `Gate`；项目中不存在“测量算符”这类型，因此无法把测量放进电路。
+
+保持这条约束的原因：
+
+- **dagger 会失意义**。`Circuit.dagger()` 依赖每个 operation 可逆，而测量不可逆，一旦电路中含测量，电路级 dagger 就无定义；
+- **后端假设保范**。`apply()` 不会重新归一化，因为酉矩阵保范；把投影算符当成门送进去会静默破坏归一化；
+- **序列化边界**。OpenQASM 中 `measure` 是独立的语句类型，不是 gate，不应复用 `qasm_name` 这套门元数据；
+- **可重复性**。红路保持纯酉后，同一个 `Circuit` 可以被任意次重复执行、取 dagger、导出，而不会因为内部带随机性而产生副作用。
+
+因此正确的用法是“先执行、后读取”：
+
+```python
+state = simulator.run(circuit)
+counts = state.sample(1000, generator)
+```
+
+电路中间测量（mid-circuit measurement）目前不支持。将来若要支持，应引入独立的指令类型和经典寄存器模型，而不是把测量伪装成 `Gate`。
+
+### 4.7 StateVectorSimulator 与读取
+
+模拟器只负责编排，不持有数学逻辑：
+
+```python
+simulator = StateVectorSimulator()
+
+state = simulator.run(circuit)
+counts = state.sample(1000, np.random.default_rng(7))
+value = state.expectation(observable)
+```
+
+模拟器只提供 `run()`。采样和期望都是对**已有末态**的后处理，因此作用在 `run()` 返回的 `StateVector` 上，而不是再包一层接受 `Circuit` 的方法。这样“跑了几次电路”在代码里是显式的；若做成接受 `Circuit` 的方法，重新运行会被隐藏在调用内部。
+
+采样与期望本质上是**量子态的属性**，不需要电路也不需要执行引擎，因此原语位于 `StateVector`：
+
+```python
+state.probabilities
+state.sample(shots, generator)
+state.expectation(observable)
+state.inner_product(other)
+```
+
+其中 `observable` 是 `Observable` 实例，详见 4.8 节。
+
+#### 不提供投影测量
+
+**项目有意不提供会坦缩量子态的测量接口。** `StateVector` 上不存在 `measure()`，`Backend` 也不提供 `collapse()`。
+
+原因：
+
+- **保持状态只做酉演化**。去掉测量后，`StateVector` 唯一的原地修改就是 `apply()`，而它总是保范。任何时刻状态都是归一化的，不存在“被某次读取静默破坏”的情况；
+- **采样已经足够**。`sample()` 抽的是完整基态索引，联合分布和关联性都完整保留；
+- **可重复读取**。同一个末态可以被任意次采样、求期望，结果互不干扰。测量会破坏`StateVector`。
+
+#### 采样
+
+`sample()` 从 $p(i)=|a_i|^2$ 重复抽样，返回 `{基态索引: 次数}`。它走 `probabilities`（`float64` numpy）并使用 numpy 的 `Generator`，因此**相同 seed 在所有后端上结果一致**，代价是一次 device→host 拷贝。若将来 profiling 证明这是瓶颈，可以在同一接口下改为后端原生采样，但会失去跨后端的可复现性。
+
+由于低精度后端的概率和可能偏离 1，采样前会重新归一化，否则 `complex64` 下 numpy 会直接报错。
+
+#### 期望
+
+$$
+\langle O\rangle=\langle\psi|O|\psi\rangle
+$$
+
+对每一项：复制状态 → 依次施加该 Pauli 串对应的 operation → 与原态求内积 → 乘以权重后累加。这样 $X$、$Y$、$Z$ 以及任意多比特乘积共用同一套门应用算法，不需要为对角/非对角可观测量分别写路径。
+
+返回值取内积的实部。不做额外的厄米性校验：`Observable` 已经从构造上保证每项是实系数乘 Pauli 串，而运行时的数值校验合理容差随 qubit 数和 dtype 变化，强行检查反而会在大规模 `complex64` 下误报。
+
+### 4.8 Observable
+
+`Observable` 描述一个加权 Pauli 和，即典型的哈密顿量：
+
+$$
+H=\sum_k c_k P_k,\qquad P_k=\bigotimes_i \sigma_i
+$$
+
+```python
+observable = Observable([
+    (0.5, {0: "Z", 1: "Z"}),
+    (0.5, {0: "X", 1: "X"}),
+    (2.0, {}),                # 恒等项
+])
+
+value = state.expectation(observable)
+```
+
+`PauliTerm` 是不可变值对象，构造时完成全部规范化与校验：
+
+- 系数必须是有限实数；
+- Pauli 字母限为 `I`、`X`、`Y`、`Z`（不区分大小写）；
+- qubit 必须是非负整数且在同一项内唯一；
+- 恒等因子会被丢弃，剩余项按 qubit 升序排列，使相同算符有唯一表示。
+
+#### 为什么不直接用 operation 序列
+
+早期 `expectation()` 接受任意 operation 序列，这意味着传入 `[RX(0.3, 0)]` 也能算出一个数字——但那不是期望值，因为 $RX(\theta)$ 不是厄米算符。改用符号化的 Pauli 规格后，这类错误在**构造期**就不可能发生。
+
+需要对任意（非 Pauli）算符求内积时，使用 `state.inner_product(other)` 作为逃生口。
+
+#### 依赖方向
+
+`Observable` 是纯粹的**算符描述**，不持有也不求值量子态：
+
+```text
+Observable -> Operation -> Gate
+StateVector -> Observable
+```
+
+这与 `Gate`/`Operation` 描述酉门、由 `state.apply()` 执行是对称的。反过来写成 `observable.expectation(state)` 会让一个值对象反向依赖 `StateVector`，并且会与 `state.expectation()` 形成两个重复入口。
 
 ## 5. Qubit 与矩阵约定
 
@@ -393,13 +555,47 @@ U3(\theta,\phi,\lambda)^\dagger
 U3(-\theta,-\lambda,-\phi)
 $$
 
-`Operation` 本身不输出 OpenQASM 文本。未来的 exporter 应负责：
+`Operation` 本身不输出也不解释 OpenQASM 文本，这些工作全部位于独立模块。
 
-- OpenQASM 版本头；
-- qubit register 声明；
-- 参数格式化；
-- operation 到指令文本的转换；
-- OpenQASM 2 与 OpenQASM 3 的语法差异。
+### 8.1 导出器
+
+[src/qasm_exporter.py](../src/qasm_exporter.py) 只消费结构化元数据：
+
+```python
+operation.qasm_name
+operation.parameters
+operation.qubits
+```
+
+`Gate.qasm_name` 当初就是照着 `qelib1.inc` 一一选定的，因此**两个方向都不需要名称翻译表**。这不是巧合而是刻意设计：翻译表会成为映射关系的第二处定义，而两处定义就会漂移。
+
+参数用 `repr(float)` 格式化，它给出可精确往返的最短表示，因此 `RX(0.1 + 0.2, 0)` 导出再解析后参数逐位相同。
+
+```python
+export_qasm(circuit)                      # 纯酉程序
+export_qasm(circuit, measure_all=True)    # 追加 creg 与全寄存器测量
+```
+
+### 8.2 解析器
+
+[src/qasm_parser.py](../src/qasm_parser.py) 返回 `QasmProgram`，而不是直接返回 `Circuit`：
+
+```python
+program = parse_qasm(text)
+program.circuit        # 纯酉，可 dagger、可重复执行、可再导出
+program.measurements   # ((qubit, clbit), ...)
+program.num_clbits
+```
+
+三条关键约束：
+
+- **未知门必须报错并指名**。跳过不认识的语句会静默产生语义不同的电路，而调用方看不出任何异常，这是最危险的失败模式；
+- **测量解析到 `Circuit` 之外**，从而保住"电路只含酉演化"的不变量；
+- **测量之后再出现门操作，一律拒绝**，因为那是电路中间测量，模拟器确实无法表示。
+
+`barrier` 被忽略，这是安全的——它只约束编译器，不改变态。
+
+参数表达式（如 `pi/2`、`sqrt(4)`）**不使用 `eval()`**，而是用 `ast` 解析后按白名单遍历，只允许常量、四则运算、乘方以及 `sin/cos/tan/exp/ln/sqrt`。这样即使解析来路不明的 QASM 文件，也不会执行任意代码。
 
 ## 9. 精度与内存
 
@@ -453,6 +649,8 @@ $$
 |---|---|
 | `Gate` | 名称、qubit 数量、参数类型与有限性、矩阵形状与有限性 |
 | `Operation` | qubit 数量、整数类型、非负、唯一性 |
+| `Circuit` | operation 类型、qubit 上界 |
+| `PauliTerm` | 系数为有限实数、Pauli 字母合法、qubit 非负且项内唯一 |
 | `StateVector` | qubit 数量、振幅维度、有限性、归一化、operation 是否越界 |
 | `Backend` | 仅 dtype 合法性等自身配置，不承担量子语义校验 |
 | 门函数 | 角度必须是有限实数 |
@@ -488,63 +686,7 @@ python -m unittest discover -s tests -v
 
 推荐按以下顺序扩展：
 
-### 12.1 Circuit
-
-`Circuit` 只保存电路结构，不直接实现 statevector 算法：
-
-```python
-class Circuit:
-    num_qubits: int
-    operations: list[Operation]
-
-    def append(self, operation: Operation) -> "Circuit": ...
-    def dagger(self) -> "Circuit": ...
-```
-
-`Circuit.dagger()` 需要反转 operation 顺序，并对每个 operation 执行 dagger：
-
-$$
-(U_n\cdots U_2U_1)^\dagger
-=
-U_1^\dagger U_2^\dagger\cdots U_n^\dagger
-$$
-
-### 12.2 StateVectorSimulator
-
-执行器负责将声明式 Circuit 运行到 StateVector：
-
-```python
-state = StateVectorSimulator().run(circuit)
-```
-
-这样可以保持职责分离：
-
-- `Circuit` 描述操作序列；
-- `StateVector` 保存量子态；
-- `StateVectorSimulator` 管理执行流程。
-
-### 12.3 测量
-
-测量层应基于 `StateVector.probabilities` 实现：
-
-- 全寄存器采样；
-- 指定 qubit 测量；
-- 测量后的状态坍缩；
-- 可注入随机数生成器，以保证测试可复现。
-
-测量不是酉操作，不应建模为普通 `Gate`。
-
-### 12.4 OpenQASM
-
-OpenQASM exporter 应依赖 Circuit 和 Operation，而核心模型不依赖 exporter：
-
-```python
-qasm = OpenQASMExporter(version=3).serialize(circuit)
-```
-
-如果未来实现 parser，应将解析得到的指令转换为已有门函数或结构化 Gate，而不是让执行器直接解释 QASM 字符串。
-
-### 12.5 Python 包结构
+### 12.1 Python 包结构
 
 准备发布时，建议迁移为：
 

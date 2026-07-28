@@ -71,6 +71,9 @@ class NumpyBackend:
     def probabilities(self, amplitudes: Amplitudes) -> ProbabilityVector:
         return (np.abs(amplitudes) ** 2).astype(np.float64, copy=False)
 
+    def inner_product(self, left: Amplitudes, right: Amplitudes) -> complex:
+        return complex(np.vdot(left, right))
+
     def copy(self, amplitudes: Amplitudes) -> Amplitudes:
         return amplitudes.copy()
 

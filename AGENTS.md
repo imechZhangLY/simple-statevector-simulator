@@ -15,6 +15,11 @@ Implemented:
 - common one-, two-, and three-qubit gate functions;
 - direction-aware metadata intended for future OpenQASM serialization;
 - mutable `StateVector` with generic application of arbitrary local gates;
+- `Circuit` with encapsulated operation storage, bound validation, and circuit-level dagger;
+- a `StateVectorSimulator` execution layer;
+- non-destructive multi-shot sampling;
+- `Observable` as a weighted sum of Pauli terms, evaluated through `StateVector.expectation()`;
+- an OpenQASM 2 exporter and parser;
 - a pluggable `Backend` protocol with `NumpyBackend` and `TorchBackend` implementations, covering CPU and CUDA;
 - a bounded LRU cache of device matrices keyed by `Operation.matrix_key`;
 - backend benchmarks under `benchmarks/`;
@@ -22,10 +27,9 @@ Implemented:
 
 Not implemented yet:
 
-- `Circuit`;
-- `StateVectorSimulator` execution layer;
-- measurement, collapse, and sampling;
-- OpenQASM parser/exporter;
+- projective measurement and state collapse, which are deliberately excluded rather than merely missing;
+- mid-circuit measurement;
+- OpenQASM 3, user defined `gate` declarations, `reset`, and classically controlled statements;
 - packaging metadata and an installable Python package;
 - density matrices, noise, or alternate simulation backends.
 
@@ -36,12 +40,21 @@ Do not describe planned features as implemented.
 ```text
 benchmarks/
   benchmark_backends.py
+examples/
+  backend_option.py
+  qft_demo.py
+  hamiltonian_simulation_demo.py
 src/
   backend.py
   numpy_backend.py
   torch_backend.py
   gate.py
   operation.py
+  circuit.py
+  observable.py
+  qasm_exporter.py
+  qasm_parser.py
+  simulator.py
   single_qubit_gates.py
   two_qubit_gates.py
   three_qubit_gates.py
@@ -210,6 +223,32 @@ Do not make `Gate` import `Operation`. User-facing gate functions construct oper
 
 Direction-aware `name`, `qasm_name`, `parameters`, and `matrix` are delegated to the gate metadata. `Operation.dagger()` only toggles direction and must not calculate matrices or infer serialization rules.
 
+`Operation.matrix_key` is the value tuple `(name, num_qubits, parameters, is_dagger)` used by backends to cache converted matrices. It must keep both the parameters and the direction: keying on the name alone collides `RX(0.3)` with `RX(0.7)`, and dropping the direction collides `S` with `S†`. Either mistake silently returns the wrong matrix.
+
+### Circuit
+
+`Circuit` owns circuit structure only. It stores an ordered operation sequence, validates that operation qubits fit inside the register, and provides circuit-level dagger. It performs no numerical work and holds no state vector.
+
+Rules:
+
+- `operations` returns a tuple snapshot so callers cannot bypass `append()` validation;
+- `append()` is fluent and returns `self`, matching `StateVector.apply()`;
+- `Circuit.dagger()` must reverse the operation order and dagger every operation. Daggering in place without reversing is wrong whenever gates do not commute;
+- **a circuit contains unitary evolution only. Measurement must never appear inside a `Circuit`**; it happens after execution through `StateVector` or the simulator. There is deliberately no measurement operation type, so this is structurally enforced rather than merely conventional. Adding one would make `Circuit.dagger()` undefined, silently break the norm assumption in every backend's `apply()`, and blur the OpenQASM boundary where `measure` is a statement rather than a gate;
+- do not add execution, measurement, or serialization methods to `Circuit`.
+
+### StateVectorSimulator
+
+`StateVectorSimulator` owns execution flow only. It builds or copies a `StateVector`, applies a circuit's operations in order, and delegates sampling and expectation to the resulting state.
+
+Rules:
+
+- keep the mathematics in `StateVector` and `Backend`; the simulator must stay a thin orchestrator;
+- `run()` must not mutate a caller-supplied initial state;
+- `run()` validates that the circuit register matches the state register;
+- an explicit simulator backend overrides the initial state's backend, so a run never silently executes on the wrong device;
+- `run()` is the only public method. Sampling, measurement, and expectation are post-processing of an existing state and belong on `StateVector`. Do not add `Circuit`-taking wrappers for them: they would hide a fresh execution inside each call, so two consecutive measurements would silently become two independent experiments instead of correlated measurements of one state.
+
 ### StateVector
 
 `StateVector` owns quantum semantics and validation, not numerics. It currently:
@@ -219,13 +258,33 @@ Direction-aware `name`, `qasm_name`, `parameters`, and `matrix` are delegated to
 - exposes a read-only `numpy.complex128` amplitude view and a probability vector;
 - checks that operation qubits are inside the register;
 - delegates gate application to its backend and returns `self`;
-- supports independent copying that preserves the backend.
+- supports independent copying that preserves the backend;
+- provides `probabilities`, `sample()`, `expectation()`, and `inner_product()`.
 
 `amplitudes` must always return read-only `numpy.complex128`, regardless of backend. Backend-native arrays are exposed separately through `raw_amplitudes`.
 
+Readout rules:
+
+- **state readout must never mutate the state.** `apply()` is the only in-place modification, and it is always norm preserving. Do not add `measure()`, `collapse()`, or any other projective measurement API;
+- correlated outcomes come from `sample()`, which draws whole basis-state indices and therefore preserves the joint distribution. On a Bell state it yields only `0` and `3`, matching what sequential collapse would produce;
+- `sample()` renormalizes the probability vector first, because reduced-precision backends drift far enough from 1 for NumPy to reject the distribution;
+- randomness must come from an injectable `numpy.random.Generator` so tests stay reproducible;
+- `expectation(observable)` takes an `Observable`, evaluates every Pauli term against a copy of the state, and returns the weighted sum of the real inner products. Do not add Hermiticity validation: `Observable` already guarantees it structurally, and a numeric tolerance that works at 3 qubits produces false failures at 20 qubits in `complex64`.
+
+### Observable
+
+`Observable` describes a weighted sum of Pauli terms and nothing else. It never holds or evaluates a state.
+
+Rules:
+
+- the dependency direction is `StateVector -> Observable -> Operation -> Gate`. Do not add an `Observable.expectation(state)` method: it would invert the dependency and create a second entry point for the same mathematics;
+- `PauliTerm` validates on construction: finite real coefficient, letters restricted to `I`/`X`/`Y`/`Z`, non-negative qubits that are unique within the term;
+- identity factors are dropped and the remaining factors are sorted by qubit, so equal operators have one canonical representation;
+- `expectation()` must not accept raw operation sequences. Allowing them lets a non-Hermitian gate such as `RX(0.3)` produce a meaningless number without any error. `inner_product()` remains the escape hatch for arbitrary operators.
+
 ### Backend
 
-`Backend` is a `Protocol` in [src/backend.py](src/backend.py) that owns all numerical work: state creation, conversion, finiteness, squared norm, gate application, probabilities, copying, and NumPy conversion.
+`Backend` is a `Protocol` in [src/backend.py](src/backend.py) that owns all numerical work: state creation, conversion, finiteness, squared norm, gate application, probabilities, inner products, copying, and NumPy conversion.
 
 Rules:
 
@@ -280,11 +339,11 @@ Do not assume dagger always means negating every parameter or adding a name suff
 - `RX(theta)` -> `RX(-theta)`;
 - `U3(theta, phi, lambda)` -> `U3(-theta, -lambda, -phi)`.
 
-For a future `Circuit.dagger()`, reverse operation order and dagger every operation.
+For `Circuit.dagger()`, reverse operation order and dagger every operation.
 
 ## Serialization Boundary
 
-Core objects expose structured metadata but do not emit OpenQASM strings. A future exporter should consume:
+Core objects expose structured metadata but never emit or interpret OpenQASM text. [src/qasm_exporter.py](src/qasm_exporter.py) consumes:
 
 ```python
 operation.qasm_name
@@ -292,7 +351,17 @@ operation.parameters
 operation.qubits
 ```
 
-Keep OpenQASM version syntax, register declarations, parameter formatting, and complete circuit output in a separate exporter module. Measurement should not be modeled as a unitary `Gate`.
+Version syntax, register declarations, parameter formatting, and complete program output stay inside the exporter and parser. Do not add serialization methods to `Gate`, `Operation`, or `Circuit`.
+
+The gate names in `Gate.qasm_name` were chosen to match `qelib1.inc` one to one, so neither direction performs name translation. Keep it that way: a translation table would be a second place for the mapping to drift.
+
+Rules for [src/qasm_parser.py](src/qasm_parser.py):
+
+- **an unsupported gate must raise `QasmError` naming the gate.** Never skip an unrecognized statement: that silently produces a circuit with different semantics while looking successful;
+- **measurement is parsed into `QasmProgram.measurements`, never into the `Circuit`.** The circuit stays purely unitary, so it can still be daggered, re-executed, and exported;
+- a gate appearing after a measure statement must be rejected as mid-circuit measurement, because the simulator genuinely cannot represent it;
+- `barrier` is ignored, which is safe because it only constrains compilers;
+- **parameter expressions must never be evaluated with `eval()`.** They are parsed with `ast` and walked with a whitelist of constants, operators, and functions, so a malicious file cannot execute code.
 
 ## Coding Style
 
@@ -321,12 +390,10 @@ Do not weaken numeric tolerances broadly to hide a formula or ordering error. Re
 
 ## Recommended Next Work
 
-Unless the user directs otherwise, the next architectural step is `Circuit`:
+Unless the user directs otherwise, the remaining candidates are:
 
-1. immutable or carefully encapsulated operation storage;
-2. circuit-level qubit-bound validation;
-3. fluent `append()`;
-4. correct circuit dagger behavior;
-5. tests before adding a separate `StateVectorSimulator` runner.
+1. packaging metadata and an installable Python package;
+2. OpenQASM 3 output alongside the existing OpenQASM 2 exporter;
+3. expanding the gate set, keeping `qasm_name` aligned with the standard include file.
 
-After Circuit, proceed to the execution layer, measurement/sampling, and then OpenQASM export. Keep these concerns in separate modules.
+Keep these concerns in separate modules.

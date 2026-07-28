@@ -1,0 +1,50 @@
+{
+  "environment": {
+    "python": "3.10.11",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 85 Stepping 4, GenuineIntel",
+    "cpu_count": 8,
+    "OMP_NUM_THREADS": "1",
+    "numpy": "1.26.4",
+    "torch": "2.13.0+cpu",
+    "qulacs": "0.6.13",
+    "qiskit": "2.4.2",
+    "qiskit_aer": "0.17.2"
+  },
+  "circuit": {
+    "depth": 9,
+    "seed": 1234,
+    "threads": 1,
+    "reference": "qiskit-aer:cpu:complex128"
+  },
+  "records": [
+    {
+      "implementation": "qiskit-aer:cpu:complex128",
+      "qubits": 4,
+      "gates": 164,
+      "seconds": 0.008717400021851063,
+      "fidelity": 1.0
+    },
+    {
+      "implementation": "ours:numpy:complex128",
+      "qubits": 4,
+      "gates": 164,
+      "seconds": 0.0028591000009328127,
+      "fidelity": 1.0
+    },
+    {
+      "implementation": "ours:torch:cpu:complex128",
+      "qubits": 4,
+      "gates": 164,
+      "seconds": 0.011469199787825346,
+      "fidelity": 0.9999999999999998
+    },
+    {
+      "implementation": "qulacs:cpu:complex128",
+      "qubits": 4,
+      "gates": 164,
+      "seconds": 9.66999214142561e-05,
+      "fidelity": 1.0
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+* text=auto
+
+# A CRLF shebang breaks the script on Linux and macOS with an obscure
+# "/usr/bin/env: bash\r: No such file or directory".
+*.sh text eol=lf
+
+*.ps1 text eol=crlf
