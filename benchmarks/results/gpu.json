@@ -1,0 +1,129 @@
+{
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1020-azure-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "cpu_count": 4,
+    "OMP_NUM_THREADS": "unset",
+    "numpy": "1.26.4",
+    "torch": "2.13.0+cu126",
+    "cuda_device": "Tesla T4",
+    "cuda_memory_bytes": 16703356928,
+    "cuda_memory_gib": 15.56,
+    "qiskit": "2.4.2",
+    "qiskit_aer": "0.17.2"
+  },
+  "circuit": {
+    "depth": 9,
+    "seed": 1234,
+    "threads": 0,
+    "reference": "qiskit-aer:gpu:complex128"
+  },
+  "records": [
+    {
+      "implementation": "qiskit-aer:gpu:complex128",
+      "qubits": 4,
+      "gates": 164,
+      "seconds": 0.004403776999879483,
+      "deviation": 0.0
+    },
+    {
+      "implementation": "ours:torch:cuda:complex64",
+      "qubits": 4,
+      "gates": 164,
+      "seconds": 0.009825519999822063,
+      "deviation": 1.932765991906193e-07
+    },
+    {
+      "implementation": "ours:torch:cuda:complex128",
+      "qubits": 4,
+      "gates": 164,
+      "seconds": 0.009762427999930878,
+      "deviation": 4.4082460388307738e-16
+    },
+    {
+      "implementation": "qiskit-aer:gpu:complex128",
+      "qubits": 8,
+      "gates": 328,
+      "seconds": 0.007924590000129683,
+      "deviation": 0.0
+    },
+    {
+      "implementation": "ours:torch:cuda:complex64",
+      "qubits": 8,
+      "gates": 328,
+      "seconds": 0.021481663000031403,
+      "deviation": 8.098535293710208e-08
+    },
+    {
+      "implementation": "ours:torch:cuda:complex128",
+      "qubits": 8,
+      "gates": 328,
+      "seconds": 0.021568562000084057,
+      "deviation": 2.152175995649822e-16
+    },
+    {
+      "implementation": "qiskit-aer:gpu:complex128",
+      "qubits": 12,
+      "gates": 492,
+      "seconds": 0.01450260799992975,
+      "deviation": 0.0
+    },
+    {
+      "implementation": "ours:torch:cuda:complex64",
+      "qubits": 12,
+      "gates": 492,
+      "seconds": 0.033276285000056305,
+      "deviation": 2.838535729836402e-08
+    },
+    {
+      "implementation": "ours:torch:cuda:complex128",
+      "qubits": 12,
+      "gates": 492,
+      "seconds": 0.03333239399989907,
+      "deviation": 6.803435584740898e-17
+    },
+    {
+      "implementation": "qiskit-aer:gpu:complex128",
+      "qubits": 16,
+      "gates": 656,
+      "seconds": 0.018526187000134087,
+      "deviation": 0.0
+    },
+    {
+      "implementation": "ours:torch:cuda:complex64",
+      "qubits": 16,
+      "gates": 656,
+      "seconds": 0.04675014600002214,
+      "deviation": 9.07264826876795e-09
+    },
+    {
+      "implementation": "ours:torch:cuda:complex128",
+      "qubits": 16,
+      "gates": 656,
+      "seconds": 0.18786221799996383,
+      "deviation": 2.4348004250999632e-17
+    },
+    {
+      "implementation": "qiskit-aer:gpu:complex128",
+      "qubits": 20,
+      "gates": 820,
+      "seconds": 0.10897450699985711,
+      "deviation": 0.0
+    },
+    {
+      "implementation": "ours:torch:cuda:complex64",
+      "qubits": 20,
+      "gates": 820,
+      "seconds": 0.32319590099996276,
+      "deviation": 2.940049303574834e-09
+    },
+    {
+      "implementation": "ours:torch:cuda:complex128",
+      "qubits": 20,
+      "gates": 820,
+      "seconds": 3.6907980980001867,
+      "deviation": 7.917367341833837e-18
+    }
+  ]
+}
