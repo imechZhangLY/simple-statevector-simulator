@@ -159,6 +159,48 @@ export PYTHONPATH="$PWD/src"
 
 `examples/` 与 `benchmarks/` 下的脚本自行插入了 `src`，不设 `PYTHONPATH` 也能直接运行。
 
+## 故障排查
+
+以下两个问题都出现在 Linux 上，而且**第二个通常是第一个的后果**。
+
+### `ensurepip is not available`
+
+```text
+Creating virtual environment in .venv-bench-cuda ...
+The virtual environment was not created successfully because ensurepip is not
+available.  On Debian/Ubuntu systems, you need to install the python3-venv
+package using the following command.
+
+    apt install python3.12-venv
+```
+
+Debian 与 Ubuntu 把 `venv` 拆成了独立的包，默认不随 Python 一起安装。按提示装上即可：
+
+```bash
+sudo apt install python3.12-venv
+```
+
+**把 `python3.12` 换成报错信息里的版本号**，它对应的是 `python3` 实际指向的解释器，不同发行版各不相同。可以先确认：
+
+```bash
+python3 --version
+```
+
+### `No module named pip`
+
+```text
+No module named pip
+```
+
+删掉已创建的环境，再重新运行创建脚本：
+
+```bash
+rm -rf .venv-bench-cuda
+bash envs/bench-cuda/create-env.sh
+```
+
+**为什么不能直接重跑。** 上一个问题失败时，`python3 -m venv` 已经建好了目录和 `bin/python`，只是在执行 ensurepip 这一步才中断，于是留下一个有解释器、没有 pip 的半成品。创建脚本判断环境是否存在的依据是 `bin/python` 是否可执行，它无法区分半成品和正常环境，因此会跳过创建、直接去装依赖，从而报出这个错误。删除目录才能让它重新走一遍创建流程。
+
 ## 新增环境
 
 1. 建目录 `envs/<name>/`；

@@ -2,7 +2,7 @@
 
 numpy==1.26.4
 torch==2.13.0+cu126
-qiskit-aer-gpu==0.15.1
+qiskit-aer-gpu-cu11 # don't use qiskit-aer-gpu, it's not compatible with qiskit 2.0 Ref: https://github.com/Qiskit/qiskit-aer/issues/2336
 matplotlib==3.10.7
 
 # qulacs-gpu is intentionally absent: it ships only a source distribution that

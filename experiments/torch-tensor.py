@@ -6,9 +6,9 @@ import numpy as np
 
 REPEAT = 1000
 
-for size in [100, 1000, 10000, 100000, 1000000]:
+for size in [2, 4, 8]:
     # Create a numpy array of the given size
-    np_array = np.random.rand(size).astype(np.float32)
+    np_array = np.random.rand(size, size).astype(np.complex128)
 
     # Warm up CUDA initialization and the allocator outside the timed region.
     cuda_tensor = torch.from_numpy(np_array).cuda()
@@ -21,8 +21,7 @@ for size in [100, 1000, 10000, 100000, 1000000]:
     cpu_start_time = perf_counter()
     start_time.record()
     for _ in range(REPEAT):
-        cpu_tensor = torch.from_numpy(np_array).pin_memory()  # pin memory for faster transfer
-        cuda_tensor = cpu_tensor.cuda(non_blocking=True)
+        tensor = torch.from_numpy(np_array).cuda(non_blocking=False)
     end_time.record()
     cpu_elapsed_time_ms = (perf_counter() - cpu_start_time) * 1000
 
