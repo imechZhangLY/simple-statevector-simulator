@@ -6,7 +6,9 @@ from time import perf_counter
 REPEATS = 10
 
 for num_qubits in [16, 20, 24, 28]:
-    statevector = torch.zeros(1 << num_qubits, dtype="complex64", device="supa")
+    statevector = torch.zeros(
+        1 << num_qubits, dtype=torch.complex64, device=torch.device("supa")
+    )
     statevector[0] = 1.0
     start_time = perf_counter()
     for i in range(REPEATS):
