@@ -160,6 +160,7 @@ def gate_workloads(num_qubits: int, inner: int) -> dict[str, list]:
     last = num_qubits - 1
     return {
         "1q H(0)": [H(0)] * inner,
+        f"1q H({last})": [H(last)] * inner,
         "2q CX(0,1)": [CX(0, 1)] * inner,
         f"2q CX({last},0)": [CX(last, 0)] * inner,
         "3q CCX(0,1,2)": [CCX(0, 1, 2)] * inner,
