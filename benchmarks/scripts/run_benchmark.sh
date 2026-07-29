@@ -117,7 +117,7 @@ case "${SCENARIO}" in
         ENVIRONMENT_NAME=".venv-bench-supa"
         REQUIREMENTS="requirements-bench-supa.txt"
         THREADS="$(logical_processors)"
-        IMPLEMENTATIONS="ours:numpy:complex128,ours:torch:cpu:complex128,ours:torch:supa:complex128,ours:torch:supa:complex64,qulacs:cpu:complex128,qiskit-aer:cpu:complex128"
+        IMPLEMENTATIONS="ours:numpy:complex64,ours:torch:cpu:complex64,ours:torch:supa:complex64,qulacs:cpu:complex128,qiskit-aer:cpu:complex128"
         REFERENCE="qiskit-aer:cpu:complex128"
         TITLE="supa benchmark circuit, CPU ${THREADS} threads"
         MODULES="numpy qulacs qiskit_aer matplotlib"
@@ -133,7 +133,9 @@ PYTHON="${REPOSITORY_ROOT}/${ENVIRONMENT_NAME}/bin/python"
 
 if [[ ! -x "${PYTHON}" ]]; then
     echo "Creating virtual environment ${ENVIRONMENT_NAME} ..."
-    python3 -m venv "${REPOSITORY_ROOT}/${ENVIRONMENT_NAME}"
+    # The --system-site-packages option is required for supa,
+    # which is installed system-wide by the package manager.
+    python3 -m venv "${REPOSITORY_ROOT}/${ENVIRONMENT_NAME}" --system-site-packages
 fi
 
 MARKER="${REPOSITORY_ROOT}/${ENVIRONMENT_NAME}/.requirements-hash"

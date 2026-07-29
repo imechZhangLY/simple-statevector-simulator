@@ -191,12 +191,16 @@ def _no_synchronize() -> None:
 
 def _make_synchronize(backend):
     device = getattr(backend, "device", None)
-    if device is None or device.type != "cuda":
-        return _no_synchronize
-
-    import torch
-
-    return torch.cuda.synchronize
+    if device == "cuda":
+        import torch
+        return torch.cuda.synchronize
+    
+    if device == "supa":
+        import torch
+        import torch_br
+        return torch.supa.synchronize
+    
+    return _no_synchronize
 
 
 def available_implementations(selected: list[str] | None) -> list:
@@ -349,7 +353,29 @@ def environment_metadata() -> dict:
 
         metadata["torch"] = torch.__version__
         if torch.cuda.is_available():
-            metadata["cuda_device"] = torch.cuda.get_device_name(0)
+            device_index = torch.cuda.current_device()
+            device_properties = torch.cuda.get_device_properties(device_index)
+            metadata["cuda_device"] = device_properties.name
+            metadata["cuda_memory_bytes"] = device_properties.total_memory
+            metadata["cuda_memory_gib"] = round(
+                device_properties.total_memory / (1024**3), 2
+            )
+    except ImportError:
+        pass
+    
+    try:
+        import torch
+        import torch_br
+
+        metadata["torch_br"] = torch_br.__version__
+        if torch.supa.is_available():
+            device_index = torch.supa.current_device()
+            device_properties = torch.supa.get_device_properties(device_index)
+            metadata["supa_device"] = device_properties.name
+            metadata["supa_memory_bytes"] = device_properties.total_memory
+            metadata["supa_memory_gib"] = round(
+                device_properties.total_memory / (1024**3), 2
+            )
     except ImportError:
         pass
 
