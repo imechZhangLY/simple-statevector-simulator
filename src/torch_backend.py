@@ -124,8 +124,7 @@ class TorchBackend:
         batched_amplitudes = amplitude_tensor.permute(axes).reshape(
             1 << len(qubits), -1
         )
-        # updated = matrix @ batched_amplitudes
-        updated = self._torch.mm(matrix, batched_amplitudes)
+        updated = matrix @ batched_amplitudes
         return (
             updated.reshape((2,) * num_qubits)
             .permute(inverse_axes)
