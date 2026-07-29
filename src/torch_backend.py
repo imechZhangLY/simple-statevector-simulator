@@ -20,6 +20,14 @@ class TorchBackend:
     ) -> None:
         import torch
 
+        if device not in ("cpu", "cuda", "supa"):
+            raise ValueError(
+                f"device must be 'cpu', 'cuda', or 'supa', got {device}"
+            )
+        
+        if device == "supa" and dtype == "complex128":
+            raise ValueError("SUPA does not support complex128 dtype")
+
         if device == "supa":
             try:
                 import torch_br

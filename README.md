@@ -83,6 +83,16 @@ from torch_backend import TorchBackend
 simulator = StateVectorSimulator(TorchBackend(device="cuda", dtype="complex64"))
 ```
 
+### 支持的后端
+
+| 类名 | 所在文件 | 支持的 device | 支持的 dtype |
+|---|---|---|---|
+| `NumpyBackend` | [src/numpy_backend.py](src/numpy_backend.py) | CPU | `complex64`、`complex128` |
+| `TorchBackend` | [src/torch_backend.py](src/torch_backend.py) | `cpu`、`cuda` | `complex64`、`complex128` |
+| `TorchBackend` | [src/torch_backend.py](src/torch_backend.py) | `supa` | `complex64` |
+
+`cuda` 和 `supa` 设备需要对应硬件及运行环境可用；环境定义与平台限制见 [envs/README.md](envs/README.md)。
+
 ## 用 Agent 编写程序
 
 仓库自带一个 skill，放在 [.agents/skills/quantum-simulator/](.agents/skills/quantum-simulator/)。VS Code、opencode 等支持 Agent Skills 的工具打开本目录即可发现它，无需额外配置。`.agents/` 是厂商中立的约定位置，与仓库已有的 [AGENTS.md](AGENTS.md) 一致。
