@@ -29,6 +29,11 @@ def build_backends(selected: list[str] | None) -> list:
     except ImportError:
         torch = None
 
+    try:
+        import torch_br  # noqa: F401  registers torch.supa
+    except ImportError:
+        torch_br = None
+
     if torch is not None:
         from torch_backend import TorchBackend
 
@@ -51,6 +56,13 @@ def build_backends(selected: list[str] | None) -> list:
                     ),
                 ]
             )
+        if torch_br is not None and torch.supa.is_available():
+            backends.append(
+                (
+                    "torch:supa:complex64",
+                    lambda: TorchBackend(device="supa", dtype="complex64"),
+                )
+            )
 
     if selected is None:
         return [factory() for _, factory in backends]
@@ -70,25 +82,36 @@ def amplitude_bytes(backend) -> int:
     return BYTES_PER_AMPLITUDE[dtype_name]
 
 
-def is_cuda(backend) -> bool:
+def device_type(backend) -> str | None:
     device = getattr(backend, "device", None)
-    return device is not None and device.type == "cuda"
+    return getattr(device, "type", None)
 
 
 def make_synchronize(backend):
-    if not is_cuda(backend):
-        return lambda: None
+    backend_device = device_type(backend)
+    if backend_device == "cuda":
+        import torch
 
-    import torch
+        return torch.cuda.synchronize
+    if backend_device == "supa":
+        import torch
+        import torch_br  # noqa: F401  registers torch.supa
 
-    return torch.cuda.synchronize
+        return torch.supa.synchronize
+    return lambda: None
 
 
 def available_memory(backend) -> int:
-    if is_cuda(backend):
+    backend_device = device_type(backend)
+    if backend_device == "cuda":
         import torch
 
         return torch.cuda.mem_get_info()[0]
+    if backend_device == "supa":
+        import torch
+        import torch_br  # noqa: F401  registers torch.supa
+
+        return torch.supa.mem_get_info()[0]
     return 8 * 1024**3
 
 
@@ -176,6 +199,11 @@ def run_cache_benchmark(num_qubits, repeats, inner) -> None:
     except ImportError:
         return
 
+    try:
+        import torch_br  # noqa: F401  registers torch.supa
+    except ImportError:
+        torch_br = None
+
     from torch_backend import TorchBackend
 
     configurations = [
@@ -188,6 +216,10 @@ def run_cache_benchmark(num_qubits, repeats, inner) -> None:
                 ("torch:cuda:complex128", {"device": "cuda", "dtype": "complex128"}),
                 ("torch:cuda:complex64", {"device": "cuda", "dtype": "complex64"}),
             ]
+        )
+    if torch_br is not None and torch.supa.is_available():
+        configurations.append(
+            ("torch:supa:complex64", {"device": "supa", "dtype": "complex64"})
         )
 
     print("\n=== matrix cache: guaranteed hit vs guaranteed miss ===")
