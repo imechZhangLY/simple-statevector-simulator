@@ -191,16 +191,44 @@ def _no_synchronize() -> None:
 
 def _make_synchronize(backend):
     device = getattr(backend, "device", None)
-    if device == "cuda":
+    # backend.device is a torch.device, which never compares equal to a string.
+    device_type = getattr(device, "type", None)
+    if device_type == "cuda":
         import torch
         return torch.cuda.synchronize
-    
-    if device == "supa":
+
+    if device_type == "supa":
         import torch
-        import torch_br
+        import torch_br  # noqa: F401  registers torch.supa
         return torch.supa.synchronize
-    
+
     return _no_synchronize
+
+
+def _unavailable_reason(label: str) -> str:
+    """Say why a requested implementation could not be built."""
+    from importlib.util import find_spec
+
+    if label.startswith("qulacs"):
+        if find_spec("qulacs") is None:
+            return "qulacs is not installed"
+        if label.startswith("qulacs:gpu"):
+            return "the installed qulacs has no QuantumStateGpu"
+    elif label.startswith("qiskit-aer"):
+        if find_spec("qiskit_aer") is None:
+            return "qiskit-aer is not installed"
+        if label.startswith("qiskit-aer:gpu"):
+            return "the installed qiskit-aer reports no GPU device"
+    elif label.startswith("ours:torch"):
+        if find_spec("torch") is None:
+            return "torch is not installed"
+        if ":supa:" in label:
+            if find_spec("torch_br") is None:
+                return "torch_br is not installed"
+            return "torch_br is installed but no supa device is available"
+        if ":cuda:" in label:
+            return "torch is installed but no CUDA device is available"
+    return "unknown label"
 
 
 def available_implementations(selected: list[str] | None) -> list:
@@ -315,9 +343,16 @@ def available_implementations(selected: list[str] | None) -> list:
     known = {implementation.label: implementation for implementation in implementations}
     missing = [label for label in selected if label not in known]
     if missing:
+        details = "\n".join(
+            f"  {label}: {_unavailable_reason(label)}" for label in missing
+        )
         raise SystemExit(
-            f"unavailable implementation(s): {', '.join(missing)}\n"
-            f"available: {', '.join(known)}"
+            "unavailable implementation(s):\n"
+            f"{details}\n\n"
+            "activate the environment that matches the scenario, for example\n"
+            "  envs/bench-cpu -> .venv-bench-cpu\n"
+            "see envs/README.md for how to create and activate it.\n\n"
+            f"available in this interpreter: {', '.join(sorted(known))}"
         )
     return [known[label] for label in selected]
 
@@ -398,17 +433,22 @@ def environment_metadata() -> dict:
     return metadata
 
 
-def normalized_fidelity(reference: np.ndarray, amplitudes: np.ndarray) -> float:
-    """|<a|b>|^2 / (<a|a><b|b>), which Cauchy-Schwarz bounds by 1.
+def max_amplitude_deviation(reference: np.ndarray, amplitudes: np.ndarray) -> float:
+    """Largest absolute amplitude difference, with the global phase removed.
 
-    Reduced precision states are not exactly normalized, so dividing by the
-    norms is required to keep the value from exceeding 1.
+    Preferred over fidelity because fidelity sits so close to 1 that double
+    precision cannot represent the difference: at a 1e-12 amplitude error it
+    already returns exactly 1.0, and rounding can even push it above 1. This
+    deviation is linear in the error, so it stays readable in scientific
+    notation all the way down to 1e-16.
+
+    The phase alignment keeps a framework that differs only by a global phase,
+    which is physically the same state, from reporting a large error.
     """
-    overlap = abs(complex(np.vdot(reference, amplitudes))) ** 2
-    norms = float(np.vdot(reference, reference).real) * float(
-        np.vdot(amplitudes, amplitudes).real
-    )
-    return overlap / norms
+    overlap = complex(np.vdot(reference, amplitudes))
+    if overlap != 0:
+        amplitudes = amplitudes * (abs(overlap) / overlap)
+    return float(np.max(np.abs(reference - amplitudes)))
 
 
 def run_benchmark(arguments) -> dict:
@@ -436,7 +476,7 @@ def run_benchmark(arguments) -> dict:
     records = []
     print(
         f"{'implementation':<28}{'qubits':>7}{'gates':>8}"
-        f"{'circuit ms':>13}{'per gate us':>13}{'fidelity':>20}",
+        f"{'circuit ms':>13}{'per gate us':>13}{'max error':>14}",
         flush=True,
     )
 
@@ -462,9 +502,9 @@ def run_benchmark(arguments) -> dict:
             if implementation.label == reference_label:
                 reference_amplitudes = amplitudes
 
-            fidelity = None
+            deviation = None
             if reference_amplitudes is not None:
-                fidelity = normalized_fidelity(reference_amplitudes, amplitudes)
+                deviation = max_amplitude_deviation(reference_amplitudes, amplitudes)
 
             records.append(
                 {
@@ -472,14 +512,14 @@ def run_benchmark(arguments) -> dict:
                     "qubits": num_qubits,
                     "gates": len(instructions),
                     "seconds": seconds,
-                    "fidelity": fidelity,
+                    "deviation": deviation,
                 }
             )
             print(
                 f"{implementation.label:<28}{num_qubits:>7}{len(instructions):>8}"
                 f"{seconds * 1e3:>13.3f}"
                 f"{seconds / len(instructions) * 1e6:>13.3f}"
-                f"{'-' if fidelity is None else format(fidelity, '.15f'):>20}",
+                f"{'-' if deviation is None else format(deviation, '.3e'):>14}",
                 flush=True,
             )
 
@@ -596,7 +636,7 @@ def parse_arguments() -> argparse.Namespace:
         "--reference",
         default=None,
         help=(
-            "implementation label whose final state is the fidelity reference; "
+            "implementation label whose final state is the error reference; "
             "it is executed first for every qubit count"
         ),
     )

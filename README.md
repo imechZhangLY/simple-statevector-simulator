@@ -25,6 +25,32 @@ statevector 模拟的核心计算，本质上就是稠密矩阵乘法。$n$ qubi
 
 ## 快速上手
 
+### 创建环境
+
+日常开发用 CPU 环境即可。创建脚本是幂等的：环境不存在时创建，依赖文件未变化时直接跳过。
+
+Windows：
+
+```powershell
+.\envs\cpu\create-env.ps1
+.\.venv-cpu\Scripts\Activate.ps1
+$env:PYTHONPATH = Join-Path $PWD 'src'
+```
+
+Linux：
+
+```bash
+bash envs/cpu/create-env.sh
+source .venv-cpu/bin/activate
+export PYTHONPATH="$PWD/src"
+```
+
+需要 GPU 时换用 `envs/cuda`（对应 `.venv-cuda`）。全部环境的清单、平台限制与激活方式见 [envs/README.md](envs/README.md)。
+
+`PYTHONPATH` 这一行的原因是 `src/` 为扁平布局，而 Python 只把**脚本自身所在的目录**加入 `sys.path`：写在仓库根的脚本、`python -c` 以及 `unittest discover` 都需要它。`examples/` 与 `benchmarks/` 下的脚本已自行插入 `src`，直接运行即可。
+
+### 运行第一个电路
+
 ```python
 import numpy as np
 
@@ -57,35 +83,6 @@ from torch_backend import TorchBackend
 simulator = StateVectorSimulator(TorchBackend(device="cuda", dtype="complex64"))
 ```
 
-## 环境准备
-
-项目使用两个虚拟环境，定义已提交到仓库，环境目录本身被 Git 忽略。
-
-| 环境 | 用途 | 依赖文件 |
-|---|---|---|
-| `.venv` | 主环境，CUDA 版 PyTorch | [requirements-torch-cuda.txt](requirements-torch-cuda.txt) |
-| `.venv-cpu` | CPU 版 PyTorch 对照 | [requirements-torch-cpu.txt](requirements-torch-cpu.txt) |
-
-两者均使用 Python 3.10，并从 [requirements.txt](requirements.txt) 安装 NumPy。
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv -Requirements requirements-torch-cuda.txt
-powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv-cpu -Requirements requirements-torch-cpu.txt
-```
-
-Linux 与 macOS 使用等价的 bash 脚本。它在 Linux 上默认选择 CUDA 版，在 macOS 上默认选择 [requirements-torch-macos.txt](requirements-torch-macos.txt)：`+cu126` 与 `+cpu` 这类 wheel 只为 Linux 和 Windows 发布，macOS 必须用 PyPI 上的普通版本。
-
-```bash
-bash .vscode/bootstrap-env.sh --environment-name .venv
-bash .vscode/bootstrap-env.sh --environment-name .venv-cpu --requirements requirements-torch-cpu.txt
-```
-
-脚本是幂等的：环境不存在时创建，依赖文件未变化时直接跳过。用 VS Code 打开工作区会自动触发这两个任务。
-
-不确定该用哪个脚本时，交给分发器自动判断平台与 CUDA（见下一节）。
-
-torch 是可选依赖，只安装 [requirements.txt](requirements.txt) 时 NumPy 后端可正常工作，相关测试会自动跳过。
-
 ## 用 Agent 编写程序
 
 仓库自带一个 skill，放在 [.agents/skills/quantum-simulator/](.agents/skills/quantum-simulator/)。VS Code、opencode 等支持 Agent Skills 的工具打开本目录即可发现它，无需额外配置。`.agents/` 是厂商中立的约定位置，与仓库已有的 [AGENTS.md](AGENTS.md) 一致。
@@ -102,21 +99,15 @@ torch 是可选依赖，只安装 [requirements.txt](requirements.txt) 时 NumPy
 
 skill 把工作拆成三步：
 
-**1. 初始化环境。** 分发器自行探测平台与 CUDA，再调用对应的引导脚本：
+**1. 初始化环境。** agent 按任务挑选 [envs/](envs/) 下的环境并运行其创建脚本：
 
-```powershell
-python .agents/skills/quantum-simulator/scripts/setup_environment.py
-```
+| 任务 | 环境 | 解释器 |
+|---|---|---|
+| 日常开发、跑测试 | `envs/cpu` | `.venv-cpu` |
+| GPU 模拟 | `envs/cuda` | `.venv-cuda` |
+| 跨框架基准 | `envs/bench-cpu` | `.venv-bench-cpu` |
 
-| 平台 | CUDA | 脚本 | 依赖文件 |
-|---|---|---|---|
-| Windows | 有 | `bootstrap-env.ps1` | `requirements-torch-cuda.txt` |
-| Windows | 无 | `bootstrap-env.ps1` | `requirements-torch-cpu.txt` |
-| Linux | 有 | `bootstrap-env.sh` | `requirements-torch-cuda.txt` |
-| Linux | 无 | `bootstrap-env.sh` | `requirements-torch-cpu.txt` |
-| macOS | — | `bootstrap-env.sh` | `requirements-torch-macos.txt` |
-
-加 `--print-only` 只报告判断结果而不改动任何东西，`--force-cpu` 跳过 CUDA 探测。CUDA 用 `nvidia-smi` 探测，因为此时 torch 还没装上，无法靠 import 判断。
+脚本是幂等的，且与当前目录无关，venv 始终建在仓库根。完整清单与平台限制见 [envs/README.md](envs/README.md)。
 
 **2. 编写代码。** agent 依据 [docs/api.md](docs/api.md) 和 [docs/gates.md](docs/gates.md) 生成程序，而不是靠记忆猜门名和参数顺序——这两份文档的内容是对照代码实测生成的。
 

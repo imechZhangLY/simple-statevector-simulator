@@ -80,39 +80,49 @@ Do not migrate to a nested package or add packaging infrastructure unless the ta
 
 ## Environment and Validation
 
-The project uses two Git-ignored virtual environments whose definitions are committed. Never run project code with the system, conda, or any other interpreter.
+Every environment is defined under [envs/](envs/), one directory each, and
+`envs/<name>` always creates `.venv-<name>` in the repository root. The venvs are
+Git-ignored; their definitions are committed. Never run project code with the
+system, conda, or any other interpreter.
 
-| Environment | Purpose | Requirements file |
+| Environment | Purpose | Definition |
 |---|---|---|
-| `.venv` | primary environment, CUDA PyTorch | [requirements-torch-cuda.txt](requirements-torch-cuda.txt) |
-| `.venv-cpu` | CPU-only PyTorch comparison | [requirements-torch-cpu.txt](requirements-torch-cpu.txt) |
+| `.venv-cpu` | day-to-day work and tests, torch CPU | [envs/cpu](envs/cpu) |
+| `.venv-cuda` | GPU simulation, torch cu126 | [envs/cuda](envs/cuda) |
+| `.venv-bench-cpu` | cross-framework benchmarks | [envs/bench-cpu](envs/bench-cpu) |
 
-Both use Python 3.10 and install NumPy from [requirements.txt](requirements.txt).
+All use Python 3.10. The full list, including the supa and GPU benchmark
+environments and their platform limits, is in [envs/README.md](envs/README.md).
 
 ### Check the environments before debugging
 
-Before running, debugging, or profiling anything, verify both interpreters exist:
+Before running, debugging, or profiling anything, verify the interpreter exists:
 
 ```powershell
-Test-Path .\.venv\Scripts\python.exe
 Test-Path .\.venv-cpu\Scripts\python.exe
 ```
 
-If either returns `False`, provision it. The bootstrap script creates the environment when it is missing and reinstalls only when the requirements file changed, so it is safe to run every time:
+If it returns `False`, provision it. The creators are idempotent: they build the
+environment only when it is missing and reinstall only when `requirements.txt`
+changed, so they are safe to run every time. They also work from any working
+directory.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv -Requirements requirements-torch-cuda.txt
-powershell -NoProfile -ExecutionPolicy Bypass -File .\.vscode\bootstrap-env.ps1 -EnvironmentName .venv-cpu -Requirements requirements-torch-cpu.txt
+.\envs\cpu\create-env.ps1
+.\envs\cuda\create-env.ps1
 ```
-
-On Linux and macOS use the bash counterpart, which defaults to the CUDA build on Linux and to [requirements-torch-macos.txt](requirements-torch-macos.txt) on macOS. The `+cu126` and `+cpu` wheels are published for Linux and Windows only, so macOS must use the plain PyPI build:
 
 ```bash
-bash .vscode/bootstrap-env.sh --environment-name .venv
-bash .vscode/bootstrap-env.sh --environment-name .venv-cpu --requirements requirements-torch-cpu.txt
+bash envs/cpu/create-env.sh
+bash envs/cuda/create-env.sh
 ```
 
-Never install packages into an environment ad hoc. Add the dependency to the correct requirements file and re-run the bootstrap script, so the environment stays reproducible from the repository.
+There is no macOS environment: the `+cpu` and `+cu126` wheels are published for
+Linux and Windows only.
+
+Never install packages into an environment ad hoc. Add the dependency to
+`envs/<name>/requirements.txt` and re-run the creator, so the environment stays
+reproducible from the repository.
 
 ### Run tests
 
@@ -120,17 +130,17 @@ Tests use the standard library `unittest`; pytest is not required. Always call t
 
 ```powershell
 $env:PYTHONPATH = Join-Path $PWD 'src'
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv-cpu\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
 Run a focused test module with:
 
 ```powershell
 $env:PYTHONPATH = Join-Path $PWD 'src'
-.\.venv\Scripts\python.exe -m unittest tests.test_statevector -v
+.\.venv-cpu\Scripts\python.exe -m unittest tests.test_statevector -v
 ```
 
-After every behavioral change, run the narrowest relevant tests first and then the full suite in `.venv`. Any change touching a backend, `StateVector`, or gate matrices must also pass the full suite in `.venv-cpu`:
+After every behavioral change, run the narrowest relevant tests first and then the full suite in `.venv-cpu`. Any change touching a backend, `StateVector`, or gate matrices must also pass the full suite in `.venv-cuda` when a GPU is available, since the torch backend behaves differently there:
 
 ```powershell
 $env:PYTHONPATH = Join-Path $PWD 'src'
@@ -144,7 +154,7 @@ Use `numpy.testing.assert_allclose` with an explicit absolute tolerance when exp
 Performance claims must be measured, not assumed. [benchmarks/benchmark_backends.py](benchmarks/benchmark_backends.py) adds `src` to `sys.path` itself, so it runs without `PYTHONPATH`:
 
 ```powershell
-.\.venv\Scripts\python.exe benchmarks\benchmark_backends.py --qubits 16,20,22
+.\.venv-cuda\Scripts\python.exe benchmarks\benchmark_backends.py --qubits 16,20,22
 ```
 
 Benchmarks are not part of the test suite and must stay out of `tests/`. When adding one, keep the existing methodology:
@@ -302,7 +312,7 @@ Rules:
 - backends implement the full `apply` algorithm, not thin array-namespace forwarding, so each library can use its own optimal execution path;
 - every backend must produce results identical to `NumpyBackend` within tolerance;
 - new backends must be added to `available_backends()` in [tests/test_backend.py](tests/test_backend.py);
-- optional dependencies such as torch must be imported lazily and must not be added to [requirements.txt](requirements.txt).
+- optional dependencies such as torch must be imported lazily, so the NumPy-only path keeps working in an environment that does not pin them.
 
 Do not add gate-specific execution branches to any backend's `apply()`. The generic tensor-axis algorithm must handle every gate arity unless profiling demonstrates a justified optimization.
 

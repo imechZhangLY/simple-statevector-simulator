@@ -1,5 +1,4 @@
--r requirements.txt
-
 --extra-index-url https://download.pytorch.org/whl/cu126
 
+numpy==1.26.4
 torch==2.13.0+cu126

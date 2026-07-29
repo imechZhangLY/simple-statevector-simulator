@@ -1,0 +1,5 @@
+# torch and torch_br come from the supa cloud image, so they are not pinned here.
+numpy==1.26.4
+qulacs==0.6.13
+qiskit-aer==0.17.2
+matplotlib==3.10.7

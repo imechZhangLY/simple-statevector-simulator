@@ -1,6 +1,6 @@
 ---
 name: quantum-simulator
-description: 'Run quantum circuits on this repository''s statevector simulator. Use when asked to build, simulate, or execute a quantum circuit, apply gates, sample measurement outcomes or shots, compute an expectation value of an observable, inspect the amplitude vector or state vector, set up the .venv/.venv-cpu environment, or export and parse OpenQASM. Covers environment bootstrap (CUDA/CPU/macOS aware), writing programs against the flat src/ API, and reporting results as CSV, JSON, or chat output.'
+description: 'Run quantum circuits on this repository''s statevector simulator. Use when asked to build, simulate, or execute a quantum circuit, apply gates, sample measurement outcomes or shots, compute an expectation value of an observable, inspect the amplitude vector or state vector, create or activate a project environment under envs/, or export and parse OpenQASM. Covers environment setup (CUDA/CPU aware), writing programs against the flat src/ API, and reporting results as CSV, JSON, or chat output.'
 argument-hint: 'describe the circuit and whether you want sampling, an expectation value, or amplitudes'
 ---
 
@@ -8,44 +8,58 @@ argument-hint: 'describe the circuit and whether you want sampling, an expectati
 
 Three stages: provision the environment, write the program, run it and report the results.
 
-Never run project code with the system, conda, or any other interpreter. Only the
-repository virtual environments are valid.
-
 ## Stage 1 — Provision the environment
 
-Run the dispatcher with any interpreter. It detects the platform and whether an
-NVIDIA driver is present, then calls the matching bootstrap script with the
-matching requirements file:
+Every environment is defined under [envs/](../../../envs/), one directory each,
+and `envs/<name>` always creates `.venv-<name>`. Full list and platform limits:
+[envs/README.md](../../../envs/README.md).
+
+Pick the environment for the task, then run its creator directly.
+
+| Task | Environment | Interpreter |
+|---|---|---|
+| day-to-day work, tests | `envs/cpu` | `.venv-cpu` |
+| GPU simulation | `envs/cuda` | `.venv-cuda` |
+| SUPA tests | `envs/supa` | `.venv-supa` |
+| cross-framework benchmarks | `envs/bench-cpu` | `.venv-bench-cpu` |
 
 ```powershell
-python .agents/skills/quantum-simulator/scripts/setup_environment.py
+.\envs\cpu\create-env.ps1
 ```
 
-| Platform | CUDA | Script | Requirements |
-|---|---|---|---|
-| Windows | yes | `.vscode/bootstrap-env.ps1` | `requirements-torch-cuda.txt` |
-| Windows | no | `.vscode/bootstrap-env.ps1` | `requirements-torch-cpu.txt` |
-| Linux | yes | `.vscode/bootstrap-env.sh` | `requirements-torch-cuda.txt` |
-| Linux | no | `.vscode/bootstrap-env.sh` | `requirements-torch-cpu.txt` |
-| macOS | n/a | `.vscode/bootstrap-env.sh` | `requirements-torch-macos.txt` |
+```bash
+bash envs/cpu/create-env.sh
+```
 
-Useful flags:
+Choose `envs/cuda` only when an NVIDIA GPU is present; run `nvidia-smi` to check,
+because torch is not installed yet at that point. There is no macOS environment,
+as the `+cpu` and `+cu126` wheels are published for Linux and Windows only.
 
-- `--print-only` reports the detected plan without changing anything;
-- `--force-cpu` skips CUDA detection;
-- `--environment-name .venv-cpu` provisions the CPU comparison environment.
+Choose `envs/supa` only on the SUPA cloud image, because it depends on SUPA
+hardware. `brsmi` is the SUPA counterpart of `nvidia-smi`, and the probe confirms
+the image's Python stack can actually reach the device. Run both with the
+**system** interpreter: this decides whether to create `envs/supa`, so no venv
+exists yet. The image ships torch and torch_br as system packages, which is why
+`envs/supa` is created with `--system-site-packages`. Exit code 0 means SUPA is
+usable, 1 means it is not:
 
-The script is idempotent. It creates the environment only when missing and
-reinstalls only when the requirements file changed, so it is safe to run every
-time before working.
+```bash
+brsmi
+python .agents/skills/quantum-simulator/scripts/check_supa.py
+```
 
-CUDA is detected with `nvidia-smi`, because torch is not yet installed at that
-point. On Windows the dispatcher prefers `pwsh`: launching Windows PowerShell 5.1
-from a non-PowerShell parent leaks PowerShell 7 module paths, which makes
-`Get-FileHash` disappear and the bootstrap fail.
+The probe prints the interpreter it used. Bare `python` resolves to whatever
+venv is active, so deactivate first if that line is not the image's Python.
 
-Never install packages ad hoc. Add the dependency to the correct requirements
-file and re-run the dispatcher.
+The creators are idempotent: they build the environment only when it is missing
+and reinstall only when `requirements.txt` changed, so running before each task
+is safe and usually instant. They also work from any working directory — the
+venv always lands in the repository root.
+
+**Never run project code with the system, conda, or any other interpreter**, and
+never `pip install` into an environment by hand. Add the dependency to
+`envs/<name>/requirements.txt` and re-run the creator, so the environment stays
+reproducible from the repository.
 
 ## Stage 2 — Write the program
 
@@ -53,6 +67,10 @@ Read [docs/api.md](../../../docs/api.md) for types and signatures and
 [docs/gates.md](../../../docs/gates.md) for the gate list, matrices and dagger
 metadata. Do not guess a gate name or argument order; both files are generated
 against the code.
+
+Write the program under `workspace/` in the repository root, creating the folder
+if needed. It is Git-ignored, so generated programs never end up in a commit.
+Keep `src/` for simulator code only.
 
 `src/` is a flat layout, so import by module name:
 
@@ -94,12 +112,12 @@ with the environment interpreter:
 
 ```powershell
 $env:PYTHONPATH = "$PWD\src;$PWD\.agents\skills\quantum-simulator\scripts"
-.\.venv\Scripts\python.exe your_program.py
+.\.venv-cpu\Scripts\python.exe workspace\your_program.py
 ```
 
 ```bash
 export PYTHONPATH="$PWD/src:$PWD/.agents/skills/quantum-simulator/scripts"
-./.venv/bin/python your_program.py
+./.venv-cpu/bin/python workspace/your_program.py
 ```
 
 Use [qsim_report.py](./scripts/qsim_report.py) instead of hand-writing output
@@ -176,11 +194,15 @@ After changing simulator code rather than just driving it, run the suite:
 
 ```powershell
 $env:PYTHONPATH = Join-Path $PWD 'src'
-.\.venv\Scripts\python.exe -m unittest discover -s tests
+.\.venv-cpu\Scripts\python.exe -m unittest discover -s tests
 ```
 
-Anything touching a backend, `StateVector` or gate matrices must also pass in
-`.venv-cpu`.
+`PYTHONPATH` is needed here because Python puts the *script's* directory on
+`sys.path`, not the working directory, so `unittest discover` cannot see `src/`
+without it.
+
+Anything touching a backend, `StateVector` or gate matrices must pass in both
+`.venv-cpu` and `.venv-cuda`, since the torch backend behaves differently on GPU.
 
 Sanity checks worth running when a result looks surprising:
 

@@ -10,49 +10,72 @@
 
 ## 快速开始
 
-脚本会自动创建 venv、安装依赖、设置线程环境变量、运行基准并输出 JSON 与折线图。
+脚本**不创建也不检查环境**，只设置线程环境变量、运行基准并输出 JSON 与折线图。运行前先激活对应环境，创建方法见 [envs/README.md](../envs/README.md)。
+
+每个场景对应一个环境：
+
+| 场景 | 环境 | 平台 |
+|---|---|---|
+| `cpu-single`、`cpu-multi` | `.venv-bench-cpu` | Windows, Linux |
+| `gpu` | `.venv-bench-cuda` | 仅 Linux |
+| `supa` | `.venv-bench-supa` | 仅 Linux |
+
+### Windows
 
 ```powershell
-# Windows
-powershell -NoProfile -ExecutionPolicy Bypass -File .\benchmarks\scripts\run_benchmark.ps1 -Scenario cpu-single
-powershell -NoProfile -ExecutionPolicy Bypass -File .\benchmarks\scripts\run_benchmark.ps1 -Scenario cpu-multi
+.\envs\bench-cpu\create-env.ps1        # 仅首次需要
+.\.venv-bench-cpu\Scripts\Activate.ps1
+
+.\benchmarks\scripts\run_benchmark.ps1 -Scenario cpu-single
+.\benchmarks\scripts\run_benchmark.ps1 -Scenario cpu-multi
 ```
+
+### Linux
 
 ```bash
-# Linux / macOS
+bash envs/bench-cpu/create-env.sh        # 仅首次需要
+source .venv-bench-cpu/bin/activate
+
 bash benchmarks/scripts/run_benchmark.sh --scenario cpu-single
 bash benchmarks/scripts/run_benchmark.sh --scenario cpu-multi
-bash benchmarks/scripts/run_benchmark.sh --scenario gpu      # 仅 Linux
+
+# GPU 场景换用 bench-cuda 环境
+source .venv-bench-cuda/bin/activate
+bash benchmarks/scripts/run_benchmark.sh --scenario gpu
 ```
 
-可用选项：`--qubits 4,8,12,16,20`、`--repeats 5`、`--skip-install`（PowerShell 为 `-Qubits`、`-Repeats`、`-SkipInstall`）。
+可用选项：`--qubits 4,8,12,16,20`、`--repeats 5`（PowerShell 为 `-Qubits`、`-Repeats`）。
+
+脚本开头会打印实际使用的解释器路径，可据此确认激活的是否为预期环境。若环境缺少某个框架，[framework_comparison.py](framework_comparison.py) 会指名缺失的包并退出，而不是静默跳过该实现：
+
+```text
+unavailable implementation(s):
+  qulacs:cpu:complex128: qulacs is not installed
+  qiskit-aer:cpu:complex128: qiskit-aer is not installed
+```
+
+它还会区分“包没装”与“包装了但设备不可用”，例如 `torch is installed but no CUDA device is available`。
 
 选用 bash 而非 POSIX sh，是因为 `set -o pipefail`、数组和 `[[ ]]` 均为 bash 特有；脚本只用 bash 3.2 特性，因此 macOS 自带的 bash 也能直接运行。
 
-### 依赖检查
-
-安装前先判断是否真的需要安装，两个条件都满足才跳过：
-
-1. 依赖文件的 SHA-256 与 venv 内 `.requirements-hash` 标记一致；
-2. [scripts/check_dependencies.py](scripts/check_dependencies.py) 能定位到全部模块。
-
-第二条不可省略——哈希只能反映依赖文件没变，无法发现有人手动卸载了某个包。
-
 ## 场景
 
-| 场景 | 线程 | 对比实现 | 保真度基准 |
+| 场景 | 线程 | 对比实现 | 误差基准 |
 |---|---|---|---|
 | `cpu-single` | 1 | numpy-128、torch-cpu-128、qulacs、qiskit-aer | qiskit-aer |
 | `cpu-multi` | 系统逻辑核数 | 同上 | qiskit-aer |
 | `gpu`（仅 Linux） | — | torch-cuda-64、torch-cuda-128、qiskit-aer-gpu | qiskit-aer-gpu |
+| `supa`（仅 Linux） | 系统逻辑核数 | numpy-64、torch-cpu-64、torch-supa-64、qulacs、qiskit-aer | qiskit-aer |
 
-保真度定义为
+误差定义为消去全局相位后的最大振幅偏差
 
 $$
-F=\frac{|\langle a|b\rangle|^{2}}{\langle a|a\rangle\langle b|b\rangle}
+\varepsilon=\max_i\left|a_i-e^{-i\arg\langle a|b\rangle}\,b_i\right|
 $$
 
-分母的归一化不可省略：低精度后端的末态并非严格归一，直接用 $|\langle a|b\rangle|^2$ 会得到大于 1 的“保真度”。加上归一化后由 Cauchy-Schwarz 保证 $F\le1$。
+**为什么不用保真度。** 保真度 $F$ 紧贴 1，双精度根本存不下差异：振幅误差为 $10^{-12}$ 时 $F$ 已经返回 `1.0000000000000002`，$1-F$ 恒等于 $-2.22\times10^{-16}$ 这个浮点噪声，既分辨不出误差大小，还会因舍入越过 1。$F$ 是振幅误差的**二次**量，而上式是**一次**量，因此能一直用科学计数法读到 $10^{-16}$。
+
+消去全局相位是必要的：整体相差 $e^{i\varphi}$ 的两个态在物理上完全相同，若直接相减会得到 $10^{-1}$ 量级的假误差。
 
 ## 精度说明
 
@@ -60,7 +83,7 @@ $$
 |---|---|
 | **qiskit-aer** | `precision` 可选 `"single"` / `"double"`，**默认 `"double"`**，GPU 同样适用 |
 
-本基准中采用 qiskit-aer **双精度**，作为统一的保真度基准。
+本基准中采用 qiskit-aer **双精度**，作为统一的误差基准。
 
 ## 方法学
 
@@ -92,12 +115,7 @@ $n=20$ 时为 820 门。所有角度随机。
 
 ## 环境
 
-benchmark使用独立环境，和正常环境 `.venv`区分：
-
-```powershell
-python -m venv .venv-bench
-.\.venv-bench\Scripts\python.exe -m pip install -r requirements-bench.txt
-```
+基准环境与日常开发环境分开，避免 qulacs、qiskit-aer 等对比框架污染 `.venv-cpu`。三个基准环境定义在 [envs/](../envs/)：`bench-cpu`、`bench-cuda`、`bench-supa`，创建与激活方法见 [envs/README.md](../envs/README.md)。
 
 ## 平台限制
 

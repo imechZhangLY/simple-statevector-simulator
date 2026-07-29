@@ -1,25 +1,21 @@
 #!/usr/bin/env bash
 #
-# Linux and macOS counterpart of bootstrap-env.ps1.
+# Shared virtual environment creator used by every envs/<name>/create-env.sh.
 #
-# Creates the virtual environment when it is missing and reinstalls only when
-# the requirements file changed, so it is safe to run every time.
+# Creates the environment when it is missing and reinstalls only when the
+# requirements file changed, so it is safe to run every time.
 #
 # bash is required rather than POSIX sh for `set -o pipefail` and `[[ ]]`.
-# Only bash 3.2 features are used so the bash shipped with macOS works.
 
 set -euo pipefail
 
-ENVIRONMENT_NAME=".venv"
+ENVIRONMENT_NAME=""
 REQUIREMENTS=""
+SYSTEM_SITE_PACKAGES=0
 
 usage() {
     cat <<'EOF'
-usage: bootstrap-env.sh [--environment-name NAME] [--requirements FILE]
-
-  --environment-name  virtual environment directory (default: .venv)
-  --requirements      requirements file; defaults to the CUDA build on Linux
-                      and the PyPI build on macOS
+usage: create-env.sh --environment-name NAME --requirements FILE [--system-site-packages]
 EOF
 }
 
@@ -27,23 +23,19 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --environment-name) ENVIRONMENT_NAME="$2"; shift 2 ;;
         --requirements) REQUIREMENTS="$2"; shift 2 ;;
+        --system-site-packages) SYSTEM_SITE_PACKAGES=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; usage; exit 2 ;;
     esac
 done
 
-SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPOSITORY_ROOT="$(cd "${SCRIPT_DIRECTORY}/.." && pwd)"
-
-if [[ -z "${REQUIREMENTS}" ]]; then
-    # The "+cu126" and "+cpu" wheels are published for Linux and Windows only.
-    # macOS uses the plain PyPI build, which already covers CPU and MPS.
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-        REQUIREMENTS="requirements-torch-macos.txt"
-    else
-        REQUIREMENTS="requirements-torch-cuda.txt"
-    fi
+if [[ -z "${ENVIRONMENT_NAME}" || -z "${REQUIREMENTS}" ]]; then
+    usage >&2
+    exit 2
 fi
+
+SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPOSITORY_ROOT="$(cd "${SCRIPT_DIRECTORY}/../.." && pwd)"
 
 ENVIRONMENT_PATH="${REPOSITORY_ROOT}/${ENVIRONMENT_NAME}"
 PYTHON="${ENVIRONMENT_PATH}/bin/python"
@@ -56,11 +48,15 @@ fi
 
 if [[ ! -x "${PYTHON}" ]]; then
     echo "Creating virtual environment in ${ENVIRONMENT_NAME} ..."
-    python3 -m venv "${ENVIRONMENT_PATH}"
+    if [[ "${SYSTEM_SITE_PACKAGES}" -eq 1 ]]; then
+        python3 -m venv --system-site-packages "${ENVIRONMENT_PATH}"
+    else
+        python3 -m venv "${ENVIRONMENT_PATH}"
+    fi
 fi
 
 # Linux ships sha256sum, macOS ships shasum. The result is upper-cased so the
-# marker matches the one written by Get-FileHash in bootstrap-env.ps1.
+# marker matches the one written by Get-FileHash in create-env.ps1.
 file_hash() {
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum "$1" | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]'
@@ -78,12 +74,13 @@ fi
 
 if [[ "${INSTALLED_HASH}" == "${EXPECTED_HASH}" ]]; then
     echo "${ENVIRONMENT_NAME} is up to date."
-    exit 0
+else
+    echo "Installing dependencies from ${REQUIREMENTS} into ${ENVIRONMENT_NAME} ..."
+    "${PYTHON}" -m pip install --upgrade pip --quiet
+    "${PYTHON}" -m pip install -r "${REQUIREMENTS_PATH}"
+
+    printf '%s' "${EXPECTED_HASH}" > "${MARKER}"
+    echo "${ENVIRONMENT_NAME} ready."
 fi
 
-echo "Installing dependencies from ${REQUIREMENTS} into ${ENVIRONMENT_NAME} ..."
-"${PYTHON}" -m pip install --upgrade pip --quiet
-"${PYTHON}" -m pip install -r "${REQUIREMENTS_PATH}"
-
-printf '%s' "${EXPECTED_HASH}" > "${MARKER}"
-echo "${ENVIRONMENT_NAME} ready."
+echo "Interpreter: ${PYTHON}"

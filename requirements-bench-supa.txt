@@ -1,5 +1,0 @@
--r requirements.txt
-
-qulacs==0.6.13
-qiskit-aer==0.17.2
-matplotlib==3.10.7

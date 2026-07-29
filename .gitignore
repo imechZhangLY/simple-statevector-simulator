@@ -43,3 +43,6 @@ Desktop.ini
 
 # Simulation output written by the quantum-simulator skill
 results/
+
+# Programs the quantum-simulator skill writes for one-off runs
+workspace/
