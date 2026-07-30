@@ -34,7 +34,9 @@ class StateVector:
         dimension = 1 << self._num_qubits
         normalized_amplitudes = self._backend.as_amplitudes(amplitudes)
         actual_shape = self._backend.shape(normalized_amplitudes)
-        if actual_shape != (dimension,):
+        # Backends carry one axis per qubit so a gate never has to flatten the
+        # state; the flat view is produced only on readout.
+        if actual_shape != (2,) * self._num_qubits:
             raise ValueError(
                 f"amplitudes must have shape ({dimension},), "
                 f"but received {actual_shape}"

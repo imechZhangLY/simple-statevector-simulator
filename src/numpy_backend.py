@@ -26,12 +26,13 @@ class NumpyBackend:
         return self._dtype
 
     def zero_state(self, num_qubits: int) -> Amplitudes:
-        amplitudes = np.zeros(1 << num_qubits, dtype=self._dtype)
-        amplitudes[0] = 1
+        amplitudes = np.zeros((2,) * num_qubits, dtype=self._dtype)
+        amplitudes[(0,) * num_qubits] = 1
         return amplitudes
 
     def as_amplitudes(self, amplitudes: Any) -> Amplitudes:
-        return np.array(amplitudes, dtype=self._dtype, copy=True)
+        array = np.array(amplitudes, dtype=self._dtype, copy=True)
+        return _as_qubit_axes(array)
 
     def shape(self, amplitudes: Amplitudes) -> tuple[int, ...]:
         return tuple(amplitudes.shape)
@@ -40,6 +41,7 @@ class NumpyBackend:
         return bool(np.isfinite(amplitudes).all())
 
     def squared_norm(self, amplitudes: Amplitudes) -> float:
+        # np.vdot flattens its operands, so the axis layout does not matter.
         return float(np.vdot(amplitudes, amplitudes).real)
 
     def apply(
@@ -62,14 +64,11 @@ class NumpyBackend:
         )
         matrix = np.asarray(operation.matrix, dtype=self._dtype)
         updated = matrix @ batched_amplitudes
-        return (
-            updated.reshape((2,) * num_qubits)
-            .transpose(inverse_axes)
-            .reshape(-1)
-        )
+        return updated.reshape((2,) * num_qubits).transpose(inverse_axes)
 
     def probabilities(self, amplitudes: Amplitudes) -> ProbabilityVector:
-        return (np.abs(amplitudes) ** 2).astype(np.float64, copy=False)
+        probabilities = np.abs(amplitudes) ** 2
+        return probabilities.astype(np.float64, copy=False).reshape(-1)
 
     def inner_product(self, left: Amplitudes, right: Amplitudes) -> complex:
         return complex(np.vdot(left, right))
@@ -78,7 +77,16 @@ class NumpyBackend:
         return amplitudes.copy()
 
     def to_numpy(self, amplitudes: Amplitudes) -> ComplexVector:
-        return np.asarray(amplitudes, dtype=np.complex128)
+        return np.asarray(amplitudes, dtype=np.complex128).reshape(-1)
+
+
+def _as_qubit_axes(array: Amplitudes) -> Amplitudes:
+    """Reshape to one axis per qubit, leaving anything else for StateVector to reject."""
+    size = array.size
+    num_qubits = int(size).bit_length() - 1
+    if size and (1 << num_qubits) == size:
+        return array.reshape((2,) * num_qubits)
+    return array
 
 
 __all__ = ["NumpyBackend"]

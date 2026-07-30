@@ -78,21 +78,30 @@ class TorchBackend:
 
     def zero_state(self, num_qubits: int) -> Amplitudes:
         amplitudes = self._torch.zeros(
-            1 << num_qubits, dtype=self._dtype, device=self._device
+            (2,) * num_qubits, dtype=self._dtype, device=self._device
         )
-        amplitudes[0] = 1
+        amplitudes[(0,) * num_qubits] = 1
         return amplitudes
 
     def as_amplitudes(self, amplitudes: Any) -> Amplitudes:
         if isinstance(amplitudes, self._torch.Tensor):
-            return amplitudes.detach().clone().to(
+            converted = amplitudes.detach().clone().to(
                 device=self._device, dtype=self._dtype
             )
+        else:
+            array = np.array(amplitudes, dtype=np.complex128, copy=True)
+            converted = self._torch.as_tensor(
+                array, dtype=self._dtype, device=self._device
+            )
+        return self._as_qubit_axes(converted)
 
-        array = np.array(amplitudes, dtype=np.complex128, copy=True)
-        return self._torch.as_tensor(
-            array, dtype=self._dtype, device=self._device
-        )
+    def _as_qubit_axes(self, tensor: Any) -> Any:
+        """Reshape to one axis per qubit, leaving anything else for StateVector to reject."""
+        size = tensor.numel()
+        num_qubits = int(size).bit_length() - 1
+        if size and (1 << num_qubits) == size:
+            return tensor.reshape((2,) * num_qubits)
+        return tensor
 
     def shape(self, amplitudes: Amplitudes) -> tuple[int, ...]:
         return tuple(amplitudes.shape)
@@ -101,7 +110,8 @@ class TorchBackend:
         return bool(self._torch.isfinite(amplitudes).all())
 
     def squared_norm(self, amplitudes: Amplitudes) -> float:
-        return float(self._torch.vdot(amplitudes, amplitudes).real)
+        # torch.vdot is 1-D only, and flattening a permuted state would copy it.
+        return float(self._torch.sum(amplitudes.conj() * amplitudes).real)
 
     def apply(
         self,
@@ -125,11 +135,8 @@ class TorchBackend:
             1 << len(qubits), -1
         )
         updated = matrix @ batched_amplitudes
-        return (
-            updated.reshape((2,) * num_qubits)
-            .permute(inverse_axes)
-            .reshape(-1)
-        )
+        # Returning the permuted view avoids a full copy of the state per gate.
+        return updated.reshape((2,) * num_qubits).permute(inverse_axes)
 
     def probabilities(self, amplitudes: Amplitudes) -> ProbabilityVector:
         return (
@@ -137,6 +144,7 @@ class TorchBackend:
             .abs()
             .pow(2)
             .to(device="cpu", dtype=self._torch.float64)
+            .reshape(-1)
             .numpy()
         )
 
@@ -144,12 +152,13 @@ class TorchBackend:
         return amplitudes.clone()
 
     def inner_product(self, left: Amplitudes, right: Amplitudes) -> complex:
-        return complex(self._torch.vdot(left, right))
+        return complex(self._torch.sum(left.conj() * right))
 
     def to_numpy(self, amplitudes: Amplitudes) -> ComplexVector:
         return (
             amplitudes.detach()
             .to(device="cpu", dtype=self._torch.complex128)
+            .reshape(-1)
             .numpy()
         )
 

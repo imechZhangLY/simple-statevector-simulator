@@ -188,6 +188,38 @@ class BackendConformanceTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "finite"):
                     StateVector(1, [np.nan, 0], backend=backend)
 
+    def test_backend_stores_one_axis_per_qubit(self) -> None:
+        # Gates would otherwise have to flatten a permuted state on every call,
+        # which copies the whole vector.
+        for backend in available_backends():
+            with self.subTest(backend=backend.name):
+                state = StateVector(3, backend=backend)
+                self.assertEqual(tuple(state.raw_amplitudes.shape), (2, 2, 2))
+
+                state.apply(H(0)).apply(CX(0, 1)).apply(X(2))
+                self.assertEqual(tuple(state.raw_amplitudes.shape), (2, 2, 2))
+
+    def test_readout_stays_flat(self) -> None:
+        for backend in available_backends():
+            with self.subTest(backend=backend.name):
+                state = StateVector(3, backend=backend).apply(H(0)).apply(CX(0, 2))
+
+                self.assertEqual(state.amplitudes.shape, (8,))
+                self.assertEqual(state.probabilities.shape, (8,))
+
+    def test_accepts_amplitudes_in_either_shape(self) -> None:
+        flat = [1 / np.sqrt(2), 0, 0, 1 / np.sqrt(2)]
+        for backend in available_backends():
+            with self.subTest(backend=backend.name):
+                from_flat = StateVector(2, flat, backend=backend)
+                from_tensor = StateVector(
+                    2, np.reshape(flat, (2, 2)), backend=backend
+                )
+
+                np.testing.assert_allclose(
+                    from_flat.amplitudes, from_tensor.amplitudes, atol=TOLERANCE
+                )
+
     def test_rejects_operation_outside_statevector(self) -> None:
         for backend in available_backends():
             with self.subTest(backend=backend.name):
