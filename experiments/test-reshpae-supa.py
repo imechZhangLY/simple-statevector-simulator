@@ -6,10 +6,10 @@ from time import perf_counter
 REPEATS = 10
 
 for num_qubits in [16, 20, 24, 28]:
-    statevector = torch.zeros(
-        1 << num_qubits, dtype=torch.complex64, device=torch.device("supa")
-    )
-    statevector[0] = 1.0
+    import numpy
+    arr = numpy.random.rand(1 << num_qubits).astype(numpy.complex64)
+    statevector = torch.from_numpy(arr).supa()
+    start_time = perf_counter()
     qubits = [num_qubits - 1]
     target_axes = [num_qubits - 1 - qubit for qubit in qubits]
     remaining_axes = [
@@ -19,6 +19,7 @@ for num_qubits in [16, 20, 24, 28]:
     inverse_axes = [0] * num_qubits
     for position, axis in enumerate(axes):
         inverse_axes[axis] = position
+    print(f"{num_qubits} axes cost {(perf_counter() - start_time) * 1000} ms")
     start_time = perf_counter()
     for i in range(REPEATS):
         updated = statevector.reshape((2, ) * num_qubits)
