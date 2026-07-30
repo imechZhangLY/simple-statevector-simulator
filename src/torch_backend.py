@@ -77,10 +77,13 @@ class TorchBackend:
         return len(self._matrix_cache)
 
     def zero_state(self, num_qubits: int) -> Amplitudes:
+        # Can't use torch.zeros((2,) * num_qubits)
+        # because it will throw an "ToShape: dimension count exceeds ape::Shape limit" error on supa device when num_qubits is large.
         amplitudes = self._torch.zeros(
-            (2,) * num_qubits, dtype=self._dtype, device=self._device
+            1 << num_qubits, dtype=self._dtype, device=self._device
         )
-        amplitudes[(0,) * num_qubits] = 1
+        amplitudes[0] = 1
+        amplitudes = amplitudes.reshape((2,) * num_qubits)
         return amplitudes
 
     def as_amplitudes(self, amplitudes: Any) -> Amplitudes:
