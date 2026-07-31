@@ -174,6 +174,8 @@ python experiments/test-tensordot-perf.py --device supa
 
 `test-as-strided-perf.py` 会同时验证 `as_strided` 是否与输入共享 storage、门计算结果是否与原实现一致，并比较包含矩阵乘法的完整耗时。该实验只构造能够严格表示为二维 stride `(1, 2)` 的 qubit 0 布局，不能直接推广到任意目标 qubit 集合。
 
+当前 SUPA 实测中，`as_strided` 本身能够创建共享 storage 的 view，但将该 view 传给矩阵乘法会触发 `SupaBroadcast` 维度错误。这表明当前 `torch_br` matmul 内核不能正确消费该 strided view，因此该方案暂时不能用于 SUPA 后端。实验脚本会将这种算子能力限制报告为 `unsupported`。
+
 `test-tensordot-perf.py` 会比较当前的 `permute + reshape + matmul` 与不展平的 `tensordot`，并对单比特、非相邻双比特和非相邻三比特 workload 执行数值一致性检查。只有 SUPA 实测显示完整 contraction 更快时，才应替换后端热路径；CPU 结果不能代表 SUPA 算子实现。
 
 ## 平台限制

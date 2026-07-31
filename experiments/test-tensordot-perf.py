@@ -42,6 +42,14 @@ def benchmark(function) -> tuple[float, torch.Tensor]:
     return min(durations), result
 
 
+def evaluate(function) -> torch.Tensor:
+    result = function()
+    synchronize()
+    host_result = result.to("cpu")
+    synchronize()
+    return host_result
+
+
 def make_axes(
     num_qubits: int,
     qubits: tuple[int, ...],
@@ -110,13 +118,20 @@ for num_qubits in (16, 20, 24):
             )
             return updated.permute(output_axes)
 
-        reshape_ms, expected = benchmark(reshape_matmul)
-        contract_ms, actual = benchmark(contract)
-        torch.testing.assert_close(
-            actual.to("cpu"),
-            expected.to("cpu"),
-            rtol=1e-5,
-            atol=1e-5,
-        )
+        reshape_ms, _ = benchmark(reshape_matmul)
+        expected_host = evaluate(reshape_matmul)
+        try:
+            actual_host = evaluate(contract)
+            torch.testing.assert_close(
+                actual_host,
+                expected_host,
+                rtol=1e-5,
+                atol=1e-5,
+            )
+            contract_ms, _ = benchmark(contract)
+            contract_result = f"{contract_ms:.6f}"
+        except RuntimeError as error:
+            contract_result = "unsupported"
+            print(f"  {label} reason: {str(error).splitlines()[0]}")
 
-        print(f"{label:<20}{reshape_ms:>20.6f}{contract_ms:>15.6f}")
+        print(f"{label:<20}{reshape_ms:>20.6f}{contract_result:>15}")

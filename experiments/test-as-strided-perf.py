@@ -42,6 +42,14 @@ def benchmark(function) -> tuple[float, torch.Tensor]:
     return min(durations), result
 
 
+def evaluate(function) -> torch.Tensor:
+    result = function()
+    synchronize()
+    host_result = result.to("cpu")
+    synchronize()
+    return host_result
+
+
 generator = np.random.default_rng(7)
 
 for num_qubits in (16, 20, 24):
@@ -91,15 +99,22 @@ for num_qubits in (16, 20, 24):
 
     reshape_view_ms, reshaped = benchmark(reshape_view)
     strided_view_ms, strided = benchmark(strided_view)
-    reshape_apply_ms, expected = benchmark(reshape_apply)
-    strided_apply_ms, actual = benchmark(strided_apply)
+    reshape_apply_ms, _ = benchmark(reshape_apply)
+    expected_host = evaluate(reshape_apply)
 
-    torch.testing.assert_close(
-        actual.to("cpu"),
-        expected.to("cpu"),
-        rtol=1e-5,
-        atol=1e-5,
-    )
+    strided_apply_ms: float | None = None
+    unsupported_reason: str | None = None
+    try:
+        actual_host = evaluate(strided_apply)
+        torch.testing.assert_close(
+            actual_host,
+            expected_host,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        strided_apply_ms, _ = benchmark(strided_apply)
+    except RuntimeError as error:
+        unsupported_reason = str(error).splitlines()[0]
     source_storage = statevector.untyped_storage().data_ptr()
 
     print(f"\n{num_qubits} qubits, target qubit 0")
@@ -113,4 +128,12 @@ for num_qubits in (16, 20, 24):
         f"{str(strided.untyped_storage().data_ptr() == source_storage):>17}"
     )
     print(f"{'reshape + matmul':<24}{reshape_apply_ms:>12.6f}{'-':>17}")
-    print(f"{'as_strided + matmul':<24}{strided_apply_ms:>12.6f}{'-':>17}")
+    if strided_apply_ms is None:
+        print(f"{'as_strided + matmul':<24}{'unsupported':>12}{'-':>17}")
+        print(f"reason: {unsupported_reason}")
+    else:
+        print(f"{'as_strided + matmul':<24}{strided_apply_ms:>12.6f}{'-':>17}")
+
+    if strided_apply_ms is None and args.device == "supa":
+        print("stopping: the SUPA matmul kernel does not support this strided view")
+        break
