@@ -8,9 +8,64 @@ statevector 模拟的核心计算，本质上就是稠密矩阵乘法。$n$ qubi
 
 这正是机器学习领域被打磨得最充分的一类运算。多年来大量研究者和工程师围绕 GPU 上的矩阵乘法做了深度优化：kernel 融合、访存布局、混合精度、批处理调度。这些成果与量子门的数学形式高度吻合，因此不必自己写 CUDA kernel，直接把 PyTorch 当作后端就能继承整条已经成熟的加速链路。
 
-实测结果支持这个判断。22 qubit 下，`torch:cuda:complex64` 相比 `numpy:complex128` 最高快约 17 倍（[详细数据](#性能基准)）。
+实测结果支持这个判断，并且门融合在大规模电路上能进一步减少后端调用和张量重排成本（[详细数据](#性能基准)）。
 
 **自动微分是选择 PyTorch 的另一个理由，但目前尚未启用。** 变分量子算法需要对门参数求梯度，而这恰是自动微分框架的强项。当前门函数只接受 Python 实数（传入张量会抛 `TypeError`）。要支持可微模拟，需要让门参数接受张量——这是后端抽象为将来预留的方向，而不是现有能力。
+
+## 性能基准
+
+基准采用深度 9 的 qulacs benchmark 电路，每个 qubit 对应 41 个门；每项先预热一次，再重复 5 次并取最小值。表中为完整电路执行时间，单位为毫秒。Fusion 的计时包含每次 `StateVectorSimulator.run()` 内的融合编译成本，因此是开关的端到端结果。误差为相对 Qiskit Aer 参考态、消去全局相位后的最大振幅偏差。
+
+完整数据和图表： [CPU single](benchmarks/results/cpu-single.json)、[CPU multi](benchmarks/results/cpu-multi.json)、[CUDA & SUPA](benchmarks/results/cuda-supa.json)。详细方法见 [benchmarks/README.md](benchmarks/README.md)。
+
+### CPU single
+
+| implementation | 4 | 8 | 12 | 16 | 20 | 24 | 最大误差 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| qiskit-aer:cpu:complex128 | 2.654 | 5.183 | 11.656 | 100.551 | 1841.274 | 38679.676 | 0.000e+00 |
+| ours:numpy:complex128 | 1.077 | 2.571 | 8.031 | 102.248 | 2322.285 | 83694.680 | 3.619e-16 |
+| ours:numpy:complex128:fusion | 4.323 | 8.604 | 14.601 | 47.631 | 762.749 | 24594.635 | 3.775e-16 |
+| ours:torch:cpu:complex128 | 2.189 | 4.994 | 11.037 | 98.182 | 2723.063 | 171739.202 | 4.173e-16 |
+| ours:torch:cpu:complex128:fusion | 4.549 | 9.364 | 15.464 | 46.352 | 740.480 | 51796.064 | 3.775e-16 |
+| qulacs:cpu:complex128 | 0.034 | 0.151 | 2.250 | 48.432 | 946.080 | 26973.122 | 3.619e-16 |
+
+![CPU single benchmark](benchmarks/results/cpu-single.png)
+
+### CPU multi
+
+| implementation | 4 | 8 | 12 | 16 | 20 | 24 | 最大误差 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| qiskit-aer:cpu:complex128 | 2.643 | 5.165 | 11.614 | 165.317 | 407.997 | 6799.508 | 0.000e+00 |
+| ours:numpy:complex128 | 1.153 | 2.736 | 8.304 | 710.007 | 6695.238 | 90602.686 | 3.619e-16 |
+| ours:numpy:complex128:fusion | 4.414 | 8.878 | 15.085 | 309.113 | 2806.949 | 38060.738 | 3.775e-16 |
+| ours:torch:cpu:complex128 | 2.162 | 4.818 | 11.074 | 506.165 | 783.045 | 57331.052 | 4.173e-16 |
+| ours:torch:cpu:complex128:fusion | 4.696 | 9.614 | 15.718 | 119.613 | 250.563 | 24400.303 | 3.775e-16 |
+| qulacs:cpu:complex128 | 0.034 | 0.152 | 200.729 | 119.065 | 313.060 | 6302.665 | 3.619e-16 |
+
+![CPU multi benchmark](benchmarks/results/cpu-multi.png)
+
+### CUDA & SUPA
+
+CUDA 在 Tesla T4 16 GiB 上运行；SUPA 在 Biren106M 32 GiB 上运行。两组来自不同主机，表格用于展示已测环境中的实际端到端表现，不是同机硬件微基准。SUPA 只保留本项目后端，不混入其运行主机上的 CPU 或其他框架结果。
+
+| implementation | 4 | 8 | 12 | 16 | 20 | 24 | 最大误差 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| qiskit-aer:gpu:complex128 | 4.499 | 8.302 | 14.750 | 18.021 | 110.803 | 1770.893 | 0.000e+00 |
+| ours:torch:cuda:complex64 | 7.893 | 16.553 | 25.014 | 35.131 | 275.556 | 5456.028 | 1.933e-07 |
+| ours:torch:cuda:complex64:fusion | 8.443 | 16.946 | 25.464 | 34.073 | 75.613 | 1022.382 | 1.538e-07 |
+| ours:torch:cuda:complex128 | 7.891 | 16.511 | 27.783 | 184.154 | 3576.542 | 68013.105 | 4.408e-16 |
+| ours:torch:cuda:complex128:fusion | 8.395 | 16.930 | 25.525 | 51.999 | 545.602 | 9819.301 | 5.237e-16 |
+| ours:torch:supa:complex64 | 12.917 | 42.538 | 73.780 | 1863.836 | 6018.695 | 129276.047 | 1.451e-05 |
+| ours:torch:supa:complex64:fusion | 8.512 | 24.317 | 40.125 | 976.896 | 2486.712 | 38228.905 | 4.798e-06 |
+
+![CUDA and SUPA benchmark](benchmarks/results/cuda-supa.png)
+
+### 结论
+
+- **Fusion 在大规模电路上效果明显。** 24 qubits 时，CPU single 的 NumPy/Torch 分别加速 3.40 倍和 3.32 倍，CPU multi 分别加速 2.38 倍和 2.35 倍；CUDA `complex64`/`complex128` 分别加速 5.34 倍和 6.93 倍，SUPA `complex64` 加速 3.38 倍。小电路中融合编译成本可能抵消收益，因此 4–12 qubits 不一定更快。
+- **该工作负载下 CUDA 明显快于 SUPA。** 对同为 `complex64 + fusion` 的实现，CUDA 在 16、20、24 qubits 分别快约 28.7、32.9、37.4 倍。已定位的主要原因是 SUPA 对非连续 `permute` 结果执行二维 `reshape` 时会物化新 storage，逐门复制完整 statevector；CUDA/PyTorch 对相同布局的处理成本低得多。具体 stride 和复制实验见 [SUPA 张量布局限制](benchmarks/README.md#supa-张量布局限制)。
+- **数值误差很小。** CPU 与 CUDA `complex128` 相对参考实现的最大振幅误差不超过 $5.24\times10^{-16}$；CUDA `complex64` 不超过 $1.94\times10^{-7}$。SUPA `complex64` 的最大值为 $1.46\times10^{-5}$，fusion 后降至 $4.80\times10^{-6}$，仍处于单精度计算的较小误差范围。
+- **CUDA 上 `complex128` 的代价很高。** 20 和 24 qubits 时，未融合的 `complex128` 分别比 `complex64` 慢约 13.0 倍和 12.5 倍；开启 fusion 后仍慢约 7.2 倍和 9.6 倍。若任务不要求双精度，GPU 默认应使用 `complex64`。
 
 ## 特性
 

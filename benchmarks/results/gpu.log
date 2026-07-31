@@ -1,0 +1,44 @@
+
+scenario   : gpu
+threads    : 0
+qubits     : 4,8,12,16,20,24
+reference  : qiskit-aer:gpu:complex128
+interpreter: /home/azureuser/simple-statevector-simulator/.venv-bench-cuda/bin/python
+
+implementation                           qubits   gates   circuit ms  per gate us     max error
+qiskit-aer:gpu:complex128                     4     164        4.499       27.432     0.000e+00
+ours:torch:cuda:complex64                     4     164        7.893       48.126     1.933e-07
+ours:torch:cuda:complex64:fusion              4     164        8.443       51.484     1.538e-07
+ours:torch:cuda:complex128                    4     164        7.891       48.119     4.408e-16
+ours:torch:cuda:complex128:fusion             4     164        8.395       51.187     5.237e-16
+qiskit-aer:gpu:complex128                     8     328        8.302       25.310     0.000e+00
+ours:torch:cuda:complex64                     8     328       16.553       50.466     8.099e-08
+ours:torch:cuda:complex64:fusion              8     328       16.946       51.664     5.754e-08
+ours:torch:cuda:complex128                    8     328       16.511       50.338     2.152e-16
+ours:torch:cuda:complex128:fusion             8     328       16.930       51.616     1.688e-16
+qiskit-aer:gpu:complex128                    12     492       14.750       29.980     0.000e+00
+ours:torch:cuda:complex64                    12     492       25.014       50.842     2.839e-08
+ours:torch:cuda:complex64:fusion             12     492       25.464       51.756     3.140e-08
+ours:torch:cuda:complex128                   12     492       27.783       56.470     6.803e-17
+ours:torch:cuda:complex128:fusion            12     492       25.525       51.881     6.688e-17
+qiskit-aer:gpu:complex128                    16     656       18.021       27.470     0.000e+00
+ours:torch:cuda:complex64                    16     656       35.131       53.554     9.073e-09
+ours:torch:cuda:complex64:fusion             16     656       34.073       51.941     7.993e-09
+ours:torch:cuda:complex128                   16     656      184.154      280.723     2.435e-17
+ours:torch:cuda:complex128:fusion            16     656       51.999       79.267     2.140e-17
+qiskit-aer:gpu:complex128                    20     820      110.803      135.126     0.000e+00
+ours:torch:cuda:complex64                    20     820      275.556      336.044     2.940e-09
+ours:torch:cuda:complex64:fusion             20     820       75.613       92.211     2.180e-09
+ours:torch:cuda:complex128                   20     820     3576.542     4361.637     7.917e-18
+ours:torch:cuda:complex128:fusion            20     820      545.602      665.368     6.785e-18
+qiskit-aer:gpu:complex128                    24     984     1770.893     1799.688     0.000e+00
+ours:torch:cuda:complex64                    24     984     5456.028     5544.744     8.762e-10
+ours:torch:cuda:complex64:fusion             24     984     1022.382     1039.006     6.993e-10
+ours:torch:cuda:complex128                   24     984    68013.105    69119.009     2.221e-18
+ours:torch:cuda:complex128:fusion            24     984     9819.301     9978.964     2.341e-18
+
+wrote /home/azureuser/simple-statevector-simulator/benchmarks/results/gpu.json
+wrote /home/azureuser/simple-statevector-simulator/benchmarks/results/gpu.png
+
+results : /home/azureuser/simple-statevector-simulator/benchmarks/results/gpu.json
+chart   : /home/azureuser/simple-statevector-simulator/benchmarks/results/gpu.png
