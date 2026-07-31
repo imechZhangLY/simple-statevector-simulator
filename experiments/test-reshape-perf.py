@@ -18,17 +18,31 @@ if args.device == "supa":
 
 REPEATS = 10
 
+
+def synchronize() -> None:
+    if args.device != "cpu":
+        getattr(torch, args.device).synchronize()
+
+
+def benchmark(function) -> tuple[float, torch.Tensor]:
+    result = function()
+    synchronize()
+
+    start_time = perf_counter()
+    for _ in range(REPEATS):
+        result = function()
+    synchronize()
+    elapsed_ms = (perf_counter() - start_time) / REPEATS * 1000
+    return elapsed_ms, result
+
+
 for num_qubits in [16, 20, 24]:
     arr = numpy.random.rand(1 << num_qubits).astype(numpy.complex64)
-    matrix = numpy.random.rand(2, 2).astype(numpy.complex64)
     statevector = torch.from_numpy(arr)
-    matrix_tensor = torch.from_numpy(matrix)
     if args.device == "cuda":
         statevector = statevector.cuda()
-        matrix_tensor = matrix_tensor.cuda()
     elif args.device == "supa":
         statevector = statevector.supa()
-        matrix_tensor = matrix_tensor.supa()
 
     qubits = [0]
     target_axes = [num_qubits - 1 - qubit for qubit in qubits]
@@ -36,25 +50,23 @@ for num_qubits in [16, 20, 24]:
         axis for axis in range(num_qubits) if axis not in target_axes
     ]
     axes = target_axes + remaining_axes
-    inverse_axes = [0] * num_qubits
-    for position, axis in enumerate(axes):
-        inverse_axes[axis] = position
+    tensor_shape = (2,) * num_qubits
 
-    # 冷启动一次
-    updated = statevector.reshape((2, ) * num_qubits)
-    updated = updated.permute(axes).reshape(2, -1)
-    updated = matrix_tensor @ updated
-    updated = updated.reshape((2,) * num_qubits).permute(inverse_axes).reshape(-1)
+    measurements = {
+        "reshape((2,) * num_qubits)": lambda: statevector.reshape(tensor_shape),
+        "reshape(2, -1)": lambda: statevector.reshape(2, -1),
+        "reshape(tensor).permute": lambda: statevector.reshape(
+            tensor_shape
+        ).permute(axes),
+        "reshape(tensor).permute.reshape(2, -1)": lambda: statevector.reshape(
+            tensor_shape
+        ).permute(axes).reshape(2, -1),
+    }
 
-    start_time = perf_counter()
-    for i in range(REPEATS):
-        updated = statevector.reshape((2, ) * num_qubits)
-        updated = updated.permute(axes).reshape(2, -1)
-        updated = matrix_tensor @ updated
-        updated = updated.reshape((2,) * num_qubits)
-    cost_before_sync = (perf_counter() - start_time) / REPEATS * 1000
-    if args.device != "cpu":
-        getattr(torch, args.device).synchronize()
-    cost = (perf_counter() - start_time) / REPEATS * 1000
-
-    print(f"{num_qubits} reshape cost {cost} ms, before sync {cost_before_sync} ms")
+    print(f"\n{num_qubits} qubits")
+    print(f"{'operation':<44}{'time (ms)':>12}{'shares storage':>17}")
+    source_storage = statevector.untyped_storage().data_ptr()
+    for label, function in measurements.items():
+        elapsed_ms, result = benchmark(function)
+        shares_storage = result.untyped_storage().data_ptr() == source_storage
+        print(f"{label:<44}{elapsed_ms:>12.6f}{str(shares_storage):>17}")
