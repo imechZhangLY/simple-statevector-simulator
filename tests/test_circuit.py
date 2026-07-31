@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from circuit import Circuit
-from gate_fusion import fuse_circuit
+from gate_fusion import fuse_circuit, fuse_operations
 from single_qubit_gates import H, RX, T, X
 from statevector import StateVector
 from three_qubit_gates import CCX
@@ -157,6 +157,28 @@ class CircuitTests(unittest.TestCase):
         fused = fuse_circuit(circuit)
 
         self.assertEqual(fused.operations, circuit.operations)
+
+    def test_fused_gate_names_use_unique_incrementing_ids(self) -> None:
+        first = fuse_operations(H(0), X(0))
+        second = fuse_operations(H(0), X(0))
+
+        first_id = int(first.name.removeprefix("FUSED_"))
+        second_id = int(second.name.removeprefix("FUSED_"))
+        self.assertEqual(second_id, first_id + 1)
+
+    def test_fused_circuit_names_are_stable_across_repeated_fusion(self) -> None:
+        circuit = Circuit(1).append(H(0)).append(X(0))
+
+        first = fuse_circuit(circuit)
+        second = fuse_circuit(circuit)
+
+        self.assertEqual(first.operations[0].name, second.operations[0].name)
+
+    def test_different_circuits_use_different_fusion_namespaces(self) -> None:
+        first = fuse_circuit(Circuit(1).append(H(0)).append(X(0)))
+        second = fuse_circuit(Circuit(1).append(H(0)).append(X(0)))
+
+        self.assertNotEqual(first.operations[0].name, second.operations[0].name)
 
 
 if __name__ == "__main__":

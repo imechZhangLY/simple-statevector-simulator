@@ -1,8 +1,15 @@
+from itertools import count
+from weakref import WeakKeyDictionary
+
 import numpy as np
 
 from circuit import Circuit
 from gate import ComplexMatrix, Gate
 from operation import Operation
+
+_standalone_fused_gate_ids = count(1)
+_circuit_ids = count(1)
+_circuit_namespaces: WeakKeyDictionary[Circuit, int] = WeakKeyDictionary()
 
 
 def _expand_matrix(
@@ -41,7 +48,12 @@ def _expand_matrix(
     return expanded
 
 
-def fuse_operations(first: Operation, second: Operation) -> Operation:
+def fuse_operations(
+    first: Operation,
+    second: Operation,
+    *,
+    name: str | None = None,
+) -> Operation:
     first_qubits = set(first.qubits)
     second_qubits = set(second.qubits)
     if not (
@@ -57,7 +69,8 @@ def fuse_operations(first: Operation, second: Operation) -> Operation:
         _expand_matrix(second, target_qubits)
         @ _expand_matrix(first, target_qubits)
     )
-    name = f"FUSED[{first.name},{second.name}]"
+    if name is None:
+        name = f"FUSED_{next(_standalone_fused_gate_ids)}"
     gate = Gate(
         name,
         len(target_qubits),
@@ -70,6 +83,11 @@ def fuse_operations(first: Operation, second: Operation) -> Operation:
 
 def fuse_circuit(circuit: Circuit) -> Circuit:
     operations_mat = [list(row) for row in circuit.operations_mat]
+    namespace = _circuit_namespaces.get(circuit)
+    if namespace is None:
+        namespace = next(_circuit_ids)
+        _circuit_namespaces[circuit] = namespace
+    fused_gate_ids = count(1)
 
     for operations in operations_mat:
         previous: tuple[int, Operation] | None = None
@@ -83,7 +101,11 @@ def fuse_circuit(circuit: Circuit) -> Circuit:
 
             previous_column, previous_operation = previous
             try:
-                fused_operation = fuse_operations(previous_operation, operation)
+                fused_operation = fuse_operations(
+                    previous_operation,
+                    operation,
+                    name=f"FUSED_{namespace}_{next(fused_gate_ids)}",
+                )
             except ValueError:
                 previous = (column, operation)
                 continue
