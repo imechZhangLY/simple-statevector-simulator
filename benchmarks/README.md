@@ -56,6 +56,22 @@ unavailable implementation(s):
 
 它还会区分“包没装”与“包装了但设备不可用”，例如 `torch is installed but no CUDA device is available`。
 
+本项目的每个后端都有 fusion 开关对照。原标签表示 fusion 关闭，带 `:fusion` 后缀的标签表示 fusion 打开，例如：
+
+```text
+ours:numpy:complex128          fusion off
+ours:numpy:complex128:fusion   fusion on
+```
+
+场景脚本默认同时运行这两种配置。也可以直接运行最小对照：
+
+```powershell
+python benchmarks\framework_comparison.py `
+  --qubits 4,8,12 `
+  --implementations ours:numpy:complex128,ours:numpy:complex128:fusion `
+  --reference ours:numpy:complex128
+```
+
 选用 bash 而非 POSIX sh，是因为 `set -o pipefail`、数组和 `[[ ]]` 均为 bash 特有；脚本只用 bash 3.2 特性，因此 macOS 自带的 bash 也能直接运行。
 
 ## 场景
@@ -103,6 +119,7 @@ $n=20$ 时为 820 门。所有角度随机。
 计时规则：
 
 - 电路构造在计时区**之外**，只测态演化；
+- fusion on 使用 `StateVectorSimulator(fusion=True)`，每次 `run()` 的门融合编译成本包含在计时内，体现开关的端到端性能；
 - 每次运行都从 $|0\cdots0\rangle$ 开始，三个框架口径一致；
 - 一次未计时的预热，之后取多次重复的**最小值**；
 - CUDA 路径在读表前调用 `torch.cuda.synchronize()`，否则测到的只是 kernel launch。

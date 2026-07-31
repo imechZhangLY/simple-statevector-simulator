@@ -44,6 +44,7 @@ simple-statevector-simulator/
 │   ├── operation.py
 │   ├── circuit.py
 │   ├── observable.py
+│   ├── gate_fusion.py
 │   ├── qasm_exporter.py
 │   ├── qasm_parser.py
 │   ├── simulator.py
@@ -271,6 +272,7 @@ circuit = (
 职责：
 
 - 保存有序的 operation 序列；
+- 构建按 qubit 和电路深度索引的 operation 层表；
 - 校验 operation 的 qubit 在寄存器范围内（`Operation` 只保证非负和唯一，上界只有电路知道）；
 - 提供电路级 dagger。
 
@@ -285,6 +287,18 @@ U_1^\dagger U_2^\dagger\cdots U_n^\dagger
 $$
 
 只对每个 operation 取 dagger 而不反转顺序，在门不对易时会得到错误结果，因此测试中同时验证了正确实现能恢复初态、而不反转的实现不能。
+
+#### 门融合
+
+门融合属于独立的 `gate_fusion` 优化层，`Circuit` 只提供 `operations_mat` 结构，不执行矩阵计算。`fuse_circuit()` 按 qubit 行贪心扫描相邻 operation；仅当一个 operation 的 qubit 集合包含另一个时才融合，因此融合门的 qubit 数不会超过两个输入门中的最大值。
+
+设较大 qubit 空间的有序元组为 $Q$，`expand(U, Q)` 表示按照本项目“`operation.qubits` 中第一个 qubit 是局部最高位”的约定，将局部门矩阵提升到 $Q$。若 $U_1$ 先执行、$U_2$ 后执行，则融合矩阵为：
+
+$$
+U_{\mathrm{fused}} = \operatorname{expand}(U_2, Q)\operatorname{expand}(U_1, Q)
+$$
+
+不能直接对两个矩阵使用固定顺序的 Kronecker 积，因为 operation 的 qubit 可能不连续，也可能位于目标空间的任意位置。
 
 #### 电路中不允许出现测量
 

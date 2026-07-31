@@ -59,13 +59,13 @@ logical_processors() {
 case "${SCENARIO}" in
     cpu-single)
         THREADS=1
-        IMPLEMENTATIONS="ours:numpy:complex128,ours:torch:cpu:complex128,qulacs:cpu:complex128,qiskit-aer:cpu:complex128"
+        IMPLEMENTATIONS="ours:numpy:complex128,ours:numpy:complex128:fusion,ours:torch:cpu:complex128,ours:torch:cpu:complex128:fusion,qulacs:cpu:complex128,qiskit-aer:cpu:complex128"
         REFERENCE="qiskit-aer:cpu:complex128"
         TITLE="qulacs benchmark circuit, CPU single thread"
         ;;
     cpu-multi)
         THREADS="$(logical_processors)"
-        IMPLEMENTATIONS="ours:numpy:complex128,ours:torch:cpu:complex128,qulacs:cpu:complex128,qiskit-aer:cpu:complex128"
+        IMPLEMENTATIONS="ours:numpy:complex128,ours:numpy:complex128:fusion,ours:torch:cpu:complex128,ours:torch:cpu:complex128:fusion,qulacs:cpu:complex128,qiskit-aer:cpu:complex128"
         REFERENCE="qiskit-aer:cpu:complex128"
         TITLE="qulacs benchmark circuit, CPU ${THREADS} threads"
         ;;
@@ -76,13 +76,13 @@ case "${SCENARIO}" in
             exit 1
         fi
         THREADS=0
-        IMPLEMENTATIONS="ours:torch:cuda:complex64,ours:torch:cuda:complex128,qiskit-aer:gpu:complex128"
+        IMPLEMENTATIONS="ours:torch:cuda:complex64,ours:torch:cuda:complex64:fusion,ours:torch:cuda:complex128,ours:torch:cuda:complex128:fusion,qiskit-aer:gpu:complex128"
         REFERENCE="qiskit-aer:gpu:complex128"
         TITLE="qulacs benchmark circuit, GPU"
         ;;
     supa)
         THREADS="$(logical_processors)"
-        IMPLEMENTATIONS="ours:numpy:complex64,ours:torch:cpu:complex64,ours:torch:supa:complex64,qulacs:cpu:complex128,qiskit-aer:cpu:complex128"
+        IMPLEMENTATIONS="ours:torch:cpu:complex64,ours:torch:cpu:complex64:fusion,ours:torch:supa:complex64,ours:torch:supa:complex64:fusion,qiskit-aer:cpu:complex128"
         REFERENCE="qiskit-aer:cpu:complex128"
         TITLE="supa benchmark circuit, CPU ${THREADS} threads"
         ;;

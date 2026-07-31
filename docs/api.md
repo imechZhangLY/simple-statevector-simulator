@@ -147,7 +147,7 @@ state.sample(1000, np.random.default_rng(0))   # {0: 473, 3: 527}
 ## 7. `simulator` — 执行编排
 
 ```python
-StateVectorSimulator(backend=None)
+StateVectorSimulator(backend=None, *, fusion=False)
 simulator.run(circuit, initial_state=None) -> StateVector
 ```
 
@@ -156,7 +156,13 @@ simulator.run(circuit, initial_state=None) -> StateVector
 - `run()` **不会修改调用方传入的初始态**；
 - `run()` 校验电路寄存器与态寄存器一致，不一致抛 `ValueError`；
 - 显式指定的 simulator 后端会**覆盖**初始态的后端，避免在错误的设备上静默执行；
+- `fusion=True` 会在执行前调用贪心门融合，默认关闭；
 - `run()` 是唯一的公开方法。采样、期望值都是既有态的后处理，属于 `StateVector`。
+
+```python
+simulator = StateVectorSimulator(fusion=True)
+state = simulator.run(circuit)
+```
 
 不要为它们添加接收 `Circuit` 的包装方法：那会在每次调用里隐藏一次全新执行，使连续两次测量变成两个独立实验，而不是对同一个态的关联测量。
 

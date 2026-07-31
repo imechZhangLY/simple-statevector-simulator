@@ -12,6 +12,7 @@ import numpy as np  # noqa: E402
 
 DEFAULT_DEPTH = 9
 MINIMUM_QUBITS = 2
+IMPLEMENTATION_WIDTH = 40
 
 
 def build_instructions(num_qubits: int, depth: int, seed: int) -> list[tuple]:
@@ -50,9 +51,10 @@ def build_instructions(num_qubits: int, depth: int, seed: int) -> list[tuple]:
 
 
 class OurImplementation:
-    def __init__(self, label: str, backend_factory) -> None:
+    def __init__(self, label: str, backend_factory, *, fusion: bool = False) -> None:
         self.label = label
         self._backend_factory = backend_factory
+        self._fusion = fusion
 
     def build(self, num_qubits: int, instructions: list[tuple], threads: int):
         from circuit import Circuit
@@ -74,7 +76,10 @@ class OurImplementation:
             else:
                 circuit.append(CX(qubits[0], qubits[1]))
 
-        simulator = StateVectorSimulator(self._backend_factory(len(instructions)))
+        simulator = StateVectorSimulator(
+            self._backend_factory(len(instructions)),
+            fusion=self._fusion,
+        )
         state = {}
 
         def run() -> None:
@@ -237,7 +242,17 @@ def available_implementations(selected: list[str] | None) -> list:
     implementations = [
         OurImplementation("ours:numpy:complex128", lambda _: NumpyBackend()),
         OurImplementation(
+            "ours:numpy:complex128:fusion",
+            lambda _: NumpyBackend(),
+            fusion=True,
+        ),
+        OurImplementation(
             "ours:numpy:complex64", lambda _: NumpyBackend(dtype=np.complex64)
+        ),
+        OurImplementation(
+            "ours:numpy:complex64:fusion",
+            lambda _: NumpyBackend(dtype=np.complex64),
+            fusion=True,
         ),
     ]
 
@@ -263,10 +278,24 @@ def available_implementations(selected: list[str] | None) -> list:
                     ),
                 ),
                 OurImplementation(
+                    "ours:torch:cpu:complex128:fusion",
+                    lambda gates: TorchBackend(
+                        dtype="complex128", matrix_cache_size=max(gates, 256)
+                    ),
+                    fusion=True,
+                ),
+                OurImplementation(
                     "ours:torch:cpu:complex64",
                     lambda gates: TorchBackend(
                         dtype="complex64", matrix_cache_size=max(gates, 256)
                     ),
+                ),
+                OurImplementation(
+                    "ours:torch:cpu:complex64:fusion",
+                    lambda gates: TorchBackend(
+                        dtype="complex64", matrix_cache_size=max(gates, 256)
+                    ),
+                    fusion=True,
                 ),
             ]
         )
@@ -282,12 +311,30 @@ def available_implementations(selected: list[str] | None) -> list:
                         ),
                     ),
                     OurImplementation(
+                        "ours:torch:cuda:complex128:fusion",
+                        lambda gates: TorchBackend(
+                            device="cuda",
+                            dtype="complex128",
+                            matrix_cache_size=max(gates, 256),
+                        ),
+                        fusion=True,
+                    ),
+                    OurImplementation(
                         "ours:torch:cuda:complex64",
                         lambda gates: TorchBackend(
                             device="cuda",
                             dtype="complex64",
                             matrix_cache_size=max(gates, 256),
                         ),
+                    ),
+                    OurImplementation(
+                        "ours:torch:cuda:complex64:fusion",
+                        lambda gates: TorchBackend(
+                            device="cuda",
+                            dtype="complex64",
+                            matrix_cache_size=max(gates, 256),
+                        ),
+                        fusion=True,
                     ),
                 ]
             )
@@ -303,12 +350,30 @@ def available_implementations(selected: list[str] | None) -> list:
                         ),
                     ),
                     OurImplementation(
+                        "ours:torch:supa:complex128:fusion",
+                        lambda gates: TorchBackend(
+                            device="supa",
+                            dtype="complex128",
+                            matrix_cache_size=max(gates, 256),
+                        ),
+                        fusion=True,
+                    ),
+                    OurImplementation(
                         "ours:torch:supa:complex64",
                         lambda gates: TorchBackend(
                             device="supa",
                             dtype="complex64",
                             matrix_cache_size=max(gates, 256),
                         ),
+                    ),
+                    OurImplementation(
+                        "ours:torch:supa:complex64:fusion",
+                        lambda gates: TorchBackend(
+                            device="supa",
+                            dtype="complex64",
+                            matrix_cache_size=max(gates, 256),
+                        ),
+                        fusion=True,
                     ),
                 ]
             )
@@ -475,7 +540,7 @@ def run_benchmark(arguments) -> dict:
 
     records = []
     print(
-        f"{'implementation':<28}{'qubits':>7}{'gates':>8}"
+        f"{'implementation':<{IMPLEMENTATION_WIDTH}}{'qubits':>7}{'gates':>8}"
         f"{'circuit ms':>13}{'per gate us':>13}{'max error':>14}",
         flush=True,
     )
@@ -516,7 +581,8 @@ def run_benchmark(arguments) -> dict:
                 }
             )
             print(
-                f"{implementation.label:<28}{num_qubits:>7}{len(instructions):>8}"
+                f"{implementation.label:<{IMPLEMENTATION_WIDTH}}"
+                f"{num_qubits:>7}{len(instructions):>8}"
                 f"{seconds * 1e3:>13.3f}"
                 f"{seconds / len(instructions) * 1e6:>13.3f}"
                 f"{'-' if deviation is None else format(deviation, '.3e'):>14}",
@@ -609,13 +675,16 @@ def print_report(paths: list[str]) -> list[dict]:
 
     print("=== qulacs benchmark circuit, milliseconds per execution ===\n")
     header = "".join(f"{count:>11}" for count in qubit_counts)
-    print(f"{'implementation':<28}{header}")
+    print(f"{'implementation':<{IMPLEMENTATION_WIDTH}}{header}")
     for implementation in implementations:
         cells = []
         for count in qubit_counts:
             seconds = lookup.get((implementation, count))
             cells.append("-" if seconds is None else f"{seconds * 1e3:.3f}")
-        print(f"{implementation:<28}" + "".join(f"{cell:>11}" for cell in cells))
+        print(
+            f"{implementation:<{IMPLEMENTATION_WIDTH}}"
+            + "".join(f"{cell:>11}" for cell in cells)
+        )
     print()
 
     return records

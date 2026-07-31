@@ -1,6 +1,6 @@
 # Simple StateVector Simulator
 
-一个用 Python 和 NumPy 实现的轻量级量子计算模拟器。使用完整 statevector 表示纯态，通过局部酉矩阵执行量子门，并支持可插拔的计算后端（NumPy / PyTorch，CPU 与 CUDA）。
+一个用 Python 和 NumPy 实现的轻量级量子计算模拟器。使用完整 statevector 表示纯态，通过局部酉矩阵执行量子门，并支持可插拔的计算后端（NumPy / PyTorch，CPU， CUDA和SUPA）。
 
 ## 设计动机
 

@@ -13,6 +13,9 @@ class Circuit:
 
         self._num_qubits = int(num_qubits)
         self._operations: list[Operation] = []
+        self._operations_mat: list[list[Operation | None]] = [
+            [] for _ in range(num_qubits)
+        ]
 
     @property
     def num_qubits(self) -> int:
@@ -22,6 +25,13 @@ class Circuit:
     def operations(self) -> tuple[Operation, ...]:
         return tuple(self._operations)
 
+    # Each row corresponds to a qubit, and each column corresponds to an operation in the circuit.
+    # If a qubit is not involved in an operation, the corresponding entry is None.
+    # The operations in the same column are in the same layer, and can be applied in parallel.
+    @property
+    def operations_mat(self) -> list[list[Operation | None]]:
+        return self._operations_mat
+
     def append(self, operation: Operation) -> "Circuit":
         if not isinstance(operation, Operation):
             raise TypeError("operation must be an Operation")
@@ -29,6 +39,18 @@ class Circuit:
             raise IndexError("operation qubit is outside the circuit")
 
         self._operations.append(operation)
+        target = max(
+            operation.qubits,
+            key=lambda qubit: len(self._operations_mat[qubit]),
+        )
+        target_length = len(self._operations_mat[target])
+        for qubit in operation.qubits:
+            if qubit != target:
+                self._operations_mat[qubit] += [None] * (
+                    target_length - len(self._operations_mat[qubit])
+                )
+            self._operations_mat[qubit].append(operation)
+
         return self
 
     def dagger(self) -> "Circuit":
@@ -40,6 +62,7 @@ class Circuit:
     def copy(self) -> "Circuit":
         copied = Circuit(self._num_qubits)
         copied._operations = list(self._operations)
+        copied._operations_mat = [list(row) for row in self._operations_mat]
         return copied
 
     def __len__(self) -> int:

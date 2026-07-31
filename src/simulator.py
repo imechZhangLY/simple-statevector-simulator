@@ -1,15 +1,29 @@
 from backend import Backend
 from circuit import Circuit
+from gate_fusion import fuse_circuit
 from statevector import StateVector
 
 
 class StateVectorSimulator:
-    def __init__(self, backend: Backend | None = None) -> None:
+    def __init__(
+        self,
+        backend: Backend | None = None,
+        *,
+        fusion: bool = False,
+    ) -> None:
+        if not isinstance(fusion, bool):
+            raise TypeError("fusion must be a boolean")
+
         self._backend = backend
+        self._fusion = fusion
 
     @property
     def backend(self) -> Backend | None:
         return self._backend
+
+    @property
+    def fusion(self) -> bool:
+        return self._fusion
 
     def run(
         self,
@@ -37,7 +51,8 @@ class StateVectorSimulator:
                 ),
             )
 
-        for operation in circuit:
+        execution_circuit = fuse_circuit(circuit) if self._fusion else circuit
+        for operation in execution_circuit:
             state.apply(operation)
         return state
 

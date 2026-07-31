@@ -30,7 +30,9 @@ Push-Location $repositoryRoot
 try {
     $implementations = @(
         'ours:numpy:complex128',
+        'ours:numpy:complex128:fusion',
         'ours:torch:cpu:complex128',
+        'ours:torch:cpu:complex128:fusion',
         'qulacs:cpu:complex128',
         'qiskit-aer:cpu:complex128'
     ) -join ','

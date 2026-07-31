@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from circuit import Circuit
+from gate_fusion import fuse_circuit
 from single_qubit_gates import H, RX, T, X
 from statevector import StateVector
 from three_qubit_gates import CCX
@@ -20,11 +21,17 @@ def entangling_circuit() -> Circuit:
     )
 
 
-def run(circuit: Circuit) -> StateVector:
-    state = StateVector(circuit.num_qubits)
+def run(circuit: Circuit, amplitudes: np.ndarray | None = None) -> StateVector:
+    state = StateVector(circuit.num_qubits, amplitudes)
     for operation in circuit:
         state.apply(operation)
     return state
+
+
+def nontrivial_state(num_qubits: int) -> np.ndarray:
+    dimension = 1 << num_qubits
+    amplitudes = np.arange(1, dimension + 1) + 1j * np.arange(dimension, 0, -1)
+    return amplitudes / np.linalg.norm(amplitudes)
 
 
 class CircuitTests(unittest.TestCase):
@@ -117,6 +124,39 @@ class CircuitTests(unittest.TestCase):
         self.assertEqual(len(circuit), 1)
         self.assertEqual(len(copied), 2)
         self.assertEqual(copied.num_qubits, circuit.num_qubits)
+
+    def test_fuses_two_qubit_gate_followed_by_gate_on_its_first_qubit(self) -> None:
+        circuit = Circuit(4).append(CX(2, 3)).append(X(2))
+
+        fused = fuse_circuit(circuit)
+
+        self.assertEqual(len(fused), 1)
+        self.assertEqual(fused.operations[0].qubits, (2, 3))
+        amplitudes = nontrivial_state(4)
+        np.testing.assert_allclose(
+            run(fused, amplitudes).amplitudes,
+            run(circuit, amplitudes).amplitudes,
+        )
+
+    def test_fuses_non_adjacent_pair_into_three_qubit_gate(self) -> None:
+        circuit = Circuit(5).append(CX(2, 4)).append(CCX(2, 3, 4))
+
+        fused = fuse_circuit(circuit)
+
+        self.assertEqual(len(fused), 1)
+        self.assertEqual(fused.operations[0].qubits, (2, 3, 4))
+        amplitudes = nontrivial_state(5)
+        np.testing.assert_allclose(
+            run(fused, amplitudes).amplitudes,
+            run(circuit, amplitudes).amplitudes,
+        )
+
+    def test_does_not_fuse_partially_overlapping_operations(self) -> None:
+        circuit = Circuit(3).append(CX(0, 1)).append(CX(1, 2))
+
+        fused = fuse_circuit(circuit)
+
+        self.assertEqual(fused.operations, circuit.operations)
 
 
 if __name__ == "__main__":

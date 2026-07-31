@@ -1,8 +1,10 @@
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 from circuit import Circuit
+from gate_fusion import fuse_circuit as actual_fuse_circuit
 from observable import Observable
 from simulator import StateVectorSimulator
 from single_qubit_gates import H, RY, X
@@ -33,6 +35,35 @@ class SimulatorTests(unittest.TestCase):
         state = self.simulator.run(Circuit(2))
 
         np.testing.assert_allclose(state.amplitudes, [1, 0, 0, 0], atol=TOLERANCE)
+
+    def test_fusion_is_disabled_by_default(self) -> None:
+        with patch("simulator.fuse_circuit") as fuse:
+            self.simulator.run(bell_circuit())
+
+        self.assertFalse(self.simulator.fusion)
+        fuse.assert_not_called()
+
+    def test_run_uses_gate_fusion_when_enabled(self) -> None:
+        circuit = Circuit(2).append(H(0)).append(X(0)).append(CX(0, 1))
+        simulator = StateVectorSimulator(fusion=True)
+
+        with patch(
+            "simulator.fuse_circuit",
+            wraps=actual_fuse_circuit,
+        ) as fuse:
+            state = simulator.run(circuit)
+
+        self.assertTrue(simulator.fusion)
+        fuse.assert_called_once_with(circuit)
+        np.testing.assert_allclose(
+            state.amplitudes,
+            self.simulator.run(circuit).amplitudes,
+            atol=TOLERANCE,
+        )
+
+    def test_rejects_non_boolean_fusion_option(self) -> None:
+        with self.assertRaisesRegex(TypeError, "must be a boolean"):
+            StateVectorSimulator(fusion=1)
 
     def test_run_accepts_initial_state_without_mutating_it(self) -> None:
         initial_state = StateVector(2).apply(X(0))
