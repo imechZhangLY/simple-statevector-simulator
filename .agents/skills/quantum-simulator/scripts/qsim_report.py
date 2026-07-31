@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-DEFAULT_RESULTS_DIRECTORY = Path("results")
+DEFAULT_RESULTS_DIRECTORY = Path("workspace/results")
 
 __all__ = [
     "DEFAULT_RESULTS_DIRECTORY",
@@ -29,6 +29,7 @@ __all__ = [
     "to_bitstring",
     "write_amplitudes_json",
     "write_sampling_csv",
+    "write_sampling_plot",
 ]
 
 
@@ -47,23 +48,10 @@ def _prepare_path(path: Any, default_name: str) -> Path:
     return resolved
 
 
-def write_sampling_csv(
+def _sampling_rows(
     counts: Mapping[int, int],
     num_qubits: int,
-    path: Any = None,
-    top: int = 10,
-) -> tuple[Path, list[tuple[str, int, int, float]]]:
-    """Write sampling counts to CSV, ordered by count descending.
-
-    Outcomes with a zero count are omitted. ``StateVector.sample()`` already
-    returns only observed outcomes, but a merged or hand-built dictionary can
-    still carry zeros.
-
-    Ties are broken by ascending basis index so the file is deterministic.
-
-    Returns the output path and the first ``top`` rows as
-    ``(bitstring, index, count, probability)``.
-    """
+) -> list[tuple[str, int, int, float]]:
     if num_qubits <= 0:
         raise ValueError("num_qubits must be positive")
 
@@ -87,6 +75,27 @@ def write_sampling_csv(
         for bitstring, index, count, _ in rows
     ]
     rows.sort(key=lambda row: (-row[2], row[1]))
+    return rows
+
+
+def write_sampling_csv(
+    counts: Mapping[int, int],
+    num_qubits: int,
+    path: Any = None,
+    top: int = 10,
+) -> tuple[Path, list[tuple[str, int, int, float]]]:
+    """Write sampling counts to CSV, ordered by count descending.
+
+    Outcomes with a zero count are omitted. ``StateVector.sample()`` already
+    returns only observed outcomes, but a merged or hand-built dictionary can
+    still carry zeros.
+
+    Ties are broken by ascending basis index so the file is deterministic.
+
+    Returns the output path and the first ``top`` rows as
+    ``(bitstring, index, count, probability)``.
+    """
+    rows = _sampling_rows(counts, num_qubits)
 
     output = _prepare_path(path, "sampling.csv")
     with output.open("w", encoding="utf-8", newline="") as handle:
@@ -96,6 +105,42 @@ def write_sampling_csv(
             writer.writerow([bitstring, index, count, repr(probability)])
 
     return output, rows[:top]
+
+
+def write_sampling_plot(
+    counts: Mapping[int, int],
+    num_qubits: int,
+    path: Any = None,
+    top: int = 10,
+) -> Path:
+    """Plot the most frequently sampled basis states as a bar chart."""
+    if top <= 0:
+        raise ValueError("top must be positive")
+
+    rows = _sampling_rows(counts, num_qubits)[:top]
+    shots = sum(int(count) for count in counts.values())
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    output = _prepare_path(path, "sampling.png")
+    figure, axes = plt.subplots(figsize=(max(7.0, len(rows) * 0.8), 5.0))
+    axes.bar(
+        [row[0] for row in rows],
+        [row[2] for row in rows],
+        color="#287271",
+    )
+    axes.set_xlabel("Quantum state")
+    axes.set_ylabel("Sample count")
+    axes.set_title(f"Top {len(rows)} sampling outcomes ({shots} shots)")
+    axes.tick_params(axis="x", rotation=45 if num_qubits > 8 else 0)
+    axes.grid(axis="y", linewidth=0.4, alpha=0.4)
+    figure.tight_layout()
+    figure.savefig(output, dpi=150)
+    plt.close(figure)
+    return output
 
 
 def format_rows(rows: Sequence[tuple[str, int, int, float]]) -> str:

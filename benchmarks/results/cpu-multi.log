@@ -1,0 +1,50 @@
+
+scenario   : cpu-multi
+threads    : 128
+qubits     : 4,8,12,16,20,24
+reference  : qiskit-aer:cpu:complex128
+interpreter: /workspace/quantum/simple-statevector-simulator/.venv-bench-supa/bin/python
+
+implementation                           qubits   gates   circuit ms  per gate us     max error
+qiskit-aer:cpu:complex128                     4     164        2.643       16.117     0.000e+00
+ours:numpy:complex128                         4     164        1.153        7.033     3.619e-16
+ours:numpy:complex128:fusion                  4     164        4.414       26.916     3.775e-16
+ours:torch:cpu:complex128                     4     164        2.162       13.180     4.173e-16
+ours:torch:cpu:complex128:fusion              4     164        4.696       28.632     3.775e-16
+qulacs:cpu:complex128                         4     164        0.034        0.208     3.619e-16
+qiskit-aer:cpu:complex128                     8     328        5.165       15.747     0.000e+00
+ours:numpy:complex128                         8     328        2.736        8.343     2.194e-16
+ours:numpy:complex128:fusion                  8     328        8.878       27.068     1.867e-16
+ours:torch:cpu:complex128                     8     328        4.818       14.690     1.939e-16
+ours:torch:cpu:complex128:fusion              8     328        9.614       29.310     1.867e-16
+qulacs:cpu:complex128                         8     328        0.152        0.464     2.194e-16
+qiskit-aer:cpu:complex128                    12     492       11.614       23.606     0.000e+00
+ours:numpy:complex128                        12     492        8.304       16.878     7.263e-17
+ours:numpy:complex128:fusion                 12     492       15.085       30.660     7.196e-17
+ours:torch:cpu:complex128                    12     492       11.074       22.509     7.764e-17
+ours:torch:cpu:complex128:fusion             12     492       15.718       31.947     7.196e-17
+qulacs:cpu:complex128                        12     492      200.729      407.985     7.263e-17
+qiskit-aer:cpu:complex128                    16     656      165.317      252.007     0.000e+00
+ours:numpy:complex128                        16     656      710.007     1082.328     2.706e-17
+ours:numpy:complex128:fusion                 16     656      309.113      471.209     2.520e-17
+ours:torch:cpu:complex128                    16     656      506.165      771.594     2.706e-17
+ours:torch:cpu:complex128:fusion             16     656      119.613      182.338     2.520e-17
+qulacs:cpu:complex128                        16     656      119.065      181.501     2.706e-17
+qiskit-aer:cpu:complex128                    20     820      407.997      497.557     0.000e+00
+ours:numpy:complex128                        20     820     6695.238     8164.925     8.865e-18
+ours:numpy:complex128:fusion                 20     820     2806.949     3423.108     8.263e-18
+ours:torch:cpu:complex128                    20     820      783.045      954.933     8.865e-18
+ours:torch:cpu:complex128:fusion             20     820      250.563      305.565     8.263e-18
+qulacs:cpu:complex128                        20     820      313.060      381.781     8.865e-18
+qiskit-aer:cpu:complex128                    24     984     6799.508     6910.070     0.000e+00
+ours:numpy:complex128                        24     984    90602.686    92075.900     2.475e-18
+ours:numpy:complex128:fusion                 24     984    38060.738    38679.612     2.492e-18
+ours:torch:cpu:complex128                    24     984    57331.052    58263.264     2.475e-18
+ours:torch:cpu:complex128:fusion             24     984    24400.303    24797.056     2.492e-18
+qulacs:cpu:complex128                        24     984     6302.665     6405.147     2.475e-18
+
+wrote /workspace/quantum/simple-statevector-simulator/benchmarks/results/cpu-multi.json
+wrote /workspace/quantum/simple-statevector-simulator/benchmarks/results/cpu-multi.png
+
+results : /workspace/quantum/simple-statevector-simulator/benchmarks/results/cpu-multi.json
+chart   : /workspace/quantum/simple-statevector-simulator/benchmarks/results/cpu-multi.png

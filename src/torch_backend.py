@@ -160,8 +160,8 @@ class TorchBackend:
     def to_numpy(self, amplitudes: Amplitudes) -> ComplexVector:
         return (
             amplitudes.detach()
-            .to(device="cpu", dtype=self._torch.complex128)
             .reshape(-1)
+            .to(device="cpu", dtype=self._torch.complex128)
             .numpy()
         )
 

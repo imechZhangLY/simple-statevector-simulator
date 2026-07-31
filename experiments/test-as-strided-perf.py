@@ -89,23 +89,29 @@ for num_qubits in (16, 20, 24):
             storage_offset=permuted.storage_offset(),
         )
 
+    def reshape_matmul() -> torch.Tensor:
+        return matrix_tensor @ reshape_view()
+
+    def strided_matmul() -> torch.Tensor:
+        return matrix_tensor @ strided_view()
+
     def reshape_apply() -> torch.Tensor:
-        updated = matrix_tensor @ reshape_view()
+        updated = reshape_matmul()
         return updated.reshape((2,) * num_qubits).permute(inverse_axes)
 
     def strided_apply() -> torch.Tensor:
-        updated = matrix_tensor @ strided_view()
+        updated = strided_matmul()
         return updated.reshape((2,) * num_qubits).permute(inverse_axes)
 
     reshape_view_ms, reshaped = benchmark(reshape_view)
     strided_view_ms, strided = benchmark(strided_view)
     reshape_apply_ms, _ = benchmark(reshape_apply)
-    expected_host = evaluate(reshape_apply)
+    expected_host = evaluate(reshape_matmul)
 
     strided_apply_ms: float | None = None
     unsupported_reason: str | None = None
     try:
-        actual_host = evaluate(strided_apply)
+        actual_host = evaluate(strided_matmul)
         torch.testing.assert_close(
             actual_host,
             expected_host,

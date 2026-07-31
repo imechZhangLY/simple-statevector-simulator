@@ -1,6 +1,6 @@
 ---
 name: quantum-simulator
-description: 'Run quantum circuits on this repository''s statevector simulator. Use when asked to build, simulate, or execute a quantum circuit, apply gates, sample measurement outcomes or shots, compute an expectation value of an observable, inspect the amplitude vector or state vector, create or activate a project environment under envs/, or export and parse OpenQASM. Covers environment setup (CUDA/CPU aware), writing programs against the flat src/ API, and reporting results as CSV, JSON, or chat output.'
+description: 'Run quantum circuits on this repository''s statevector simulator. Use when asked to build, simulate, or execute a quantum circuit, apply gates, sample measurement outcomes or shots, compute an expectation value of an observable, inspect the amplitude vector or state vector, create or activate a project environment under envs/, or export and parse OpenQASM. Covers environment setup (SUPA/CUDA/CPU aware), writing programs against the flat src/ API, and reporting results as CSV, JSON, or chat output.'
 argument-hint: 'describe the circuit and whether you want sampling, an expectation value, or amplitudes'
 ---
 
@@ -70,7 +70,9 @@ against the code.
 
 Write the program under `workspace/` in the repository root, creating the folder
 if needed. It is Git-ignored, so generated programs never end up in a commit.
-Keep `src/` for simulator code only.
+Keep `src/` for simulator code only. Store every generated result under
+`workspace/results/`; do not write simulation outputs to the repository root,
+`results/`, or source directories.
 
 `src/` is a flat layout, so import by module name:
 
@@ -125,22 +127,32 @@ formatting. Pick the branch that matches what the user asked for.
 
 ### Sampling
 
-Write every outcome to CSV and show only the top 10 in chat.
+Write every outcome to CSV, draw the top 10 as a bar chart, and show the same
+top 10 in chat.
 
 ```python
-from qsim_report import write_sampling_csv, format_rows
+from qsim_report import format_rows, write_sampling_csv, write_sampling_plot
 
 counts = state.sample(2000, np.random.default_rng(7))
-path, top = write_sampling_csv(counts, state.num_qubits)
-print(f"csv: {path}")
+csv_path, top = write_sampling_csv(counts, state.num_qubits)
+plot_path = write_sampling_plot(counts, state.num_qubits)
+print(f"csv: {csv_path}")
+print(f"plot: {plot_path}")
 print(format_rows(top))
 ```
 
 `write_sampling_csv` sorts by count descending, breaks ties by ascending index,
 drops zero-count outcomes, and converts each index to a bitstring. Columns are
-`bitstring,index,count,probability`; the default path is `results/sampling.csv`.
+`bitstring,index,count,probability`; the default path is
+`workspace/results/sampling.csv`.
 
-Report the printed table in the reply and state where the full file went.
+`write_sampling_plot` uses the same ordering and writes at most 10 observed
+outcomes to `workspace/results/sampling.png` by default. The horizontal axis
+contains the zero-padded binary basis states, the vertical axis contains sample
+counts, and the title includes the total number of shots. If fewer than 10
+states were observed, plot only those states.
+
+Report the printed table in the reply and state where both output files went.
 
 Two things to keep in mind: `StateVector.sample()` already returns only observed
 outcomes, so the zero filter matters mainly for merged or hand-built
@@ -181,9 +193,10 @@ print(f"json: {path}")
 ```
 
 Each entry carries `index`, `bitstring`, `real`, `imag` and `probability`; the
-default path is `results/amplitudes.json`. The file holds all `2**n` amplitudes
-and therefore grows exponentially — roughly 100 MB at 20 qubits. Warn the user
-and suggest sampling or an expectation value instead for large registers.
+default path is `workspace/results/amplitudes.json`. The file holds all `2**n`
+amplitudes and therefore grows exponentially — roughly 100 MB at 20 qubits.
+Warn the user and suggest sampling or an expectation value instead for large
+registers.
 
 Summarise in the reply: qubit count, backend, output path, and at most a couple
 of notable amplitudes.

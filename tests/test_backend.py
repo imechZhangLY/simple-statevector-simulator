@@ -316,6 +316,19 @@ class TorchBackendTests(unittest.TestCase):
         self.assertEqual(state.raw_amplitudes.dtype, self.torch.complex64)
         self.assertEqual(state.raw_amplitudes.device.type, backend.device.type)
 
+    def test_to_numpy_flattens_noncontiguous_qubit_axes(self) -> None:
+        backend = self.TorchBackend(dtype="complex64")
+        amplitudes = self.torch.arange(8, dtype=self.torch.float32).to(
+            self.torch.complex64
+        ).reshape(2, 2, 2).permute(1, 2, 0)
+
+        actual = backend.to_numpy(amplitudes)
+
+        expected = amplitudes.reshape(-1).numpy().astype(np.complex128)
+        np.testing.assert_array_equal(actual, expected)
+        self.assertEqual(actual.shape, (8,))
+        self.assertEqual(actual.dtype, np.complex128)
+
     def test_matrix_cache_reuses_entries_for_equal_keys(self) -> None:
         backend = self.TorchBackend()
         state = StateVector(2, backend=backend)

@@ -4,7 +4,7 @@
     "platform": "Linux-5.15.0-119-generic-x86_64-with-glibc2.35",
     "processor": "x86_64",
     "cpu_count": 10,
-    "OMP_NUM_THREADS": "128",
+    "OMP_NUM_THREADS": "1",
     "numpy": "1.26.4",
     "torch": "2.9.0+cu128",
     "torch_br": "1.10.0.20900+br1xx",
@@ -18,7 +18,7 @@
   "circuit": {
     "depth": 9,
     "seed": 1234,
-    "threads": 128,
+    "threads": 1,
     "reference": "qiskit-aer:cpu:complex128"
   },
   "records": [
@@ -26,252 +26,252 @@
       "implementation": "qiskit-aer:cpu:complex128",
       "qubits": 4,
       "gates": 164,
-      "seconds": 0.0026432471349835396,
+      "seconds": 0.0026539177633821964,
       "deviation": 0.0
     },
     {
       "implementation": "ours:numpy:complex128",
       "qubits": 4,
       "gates": 164,
-      "seconds": 0.0011534150689840317,
+      "seconds": 0.0010768668726086617,
       "deviation": 3.6188843062238402e-16
     },
     {
       "implementation": "ours:numpy:complex128:fusion",
       "qubits": 4,
       "gates": 164,
-      "seconds": 0.004414297640323639,
+      "seconds": 0.004322805907577276,
       "deviation": 3.775166431889533e-16
     },
     {
       "implementation": "ours:torch:cpu:complex128",
       "qubits": 4,
       "gates": 164,
-      "seconds": 0.0021615461446344852,
+      "seconds": 0.0021893722005188465,
       "deviation": 4.172577943820896e-16
     },
     {
       "implementation": "ours:torch:cpu:complex128:fusion",
       "qubits": 4,
       "gates": 164,
-      "seconds": 0.0046956660225987434,
+      "seconds": 0.004548616241663694,
       "deviation": 3.775166431889533e-16
     },
     {
       "implementation": "qulacs:cpu:complex128",
       "qubits": 4,
       "gates": 164,
-      "seconds": 3.4067779779434204e-05,
+      "seconds": 3.426894545555115e-05,
       "deviation": 3.6188843062238402e-16
     },
     {
       "implementation": "qiskit-aer:cpu:complex128",
       "qubits": 8,
       "gates": 328,
-      "seconds": 0.005164877977222204,
+      "seconds": 0.005183461122214794,
       "deviation": 0.0
     },
     {
       "implementation": "ours:numpy:complex128",
       "qubits": 8,
       "gates": 328,
-      "seconds": 0.002736360765993595,
+      "seconds": 0.0025710402987897396,
       "deviation": 2.194270917860438e-16
     },
     {
       "implementation": "ours:numpy:complex128:fusion",
       "qubits": 8,
       "gates": 328,
-      "seconds": 0.008878380991518497,
+      "seconds": 0.008604229893535376,
       "deviation": 1.8670653977139894e-16
     },
     {
       "implementation": "ours:torch:cpu:complex128",
       "qubits": 8,
       "gates": 328,
-      "seconds": 0.004818334244191647,
+      "seconds": 0.00499360729008913,
       "deviation": 1.9391888634309272e-16
     },
     {
       "implementation": "ours:torch:cpu:complex128:fusion",
       "qubits": 8,
       "gates": 328,
-      "seconds": 0.009613711852580309,
+      "seconds": 0.009364283178001642,
       "deviation": 1.8670653977139894e-16
     },
     {
       "implementation": "qulacs:cpu:complex128",
       "qubits": 8,
       "gates": 328,
-      "seconds": 0.00015205005183815956,
+      "seconds": 0.0001513720490038395,
       "deviation": 2.194270917860438e-16
     },
     {
       "implementation": "qiskit-aer:cpu:complex128",
       "qubits": 12,
       "gates": 492,
-      "seconds": 0.011614041868597269,
+      "seconds": 0.011655607260763645,
       "deviation": 0.0
     },
     {
       "implementation": "ours:numpy:complex128",
       "qubits": 12,
       "gates": 492,
-      "seconds": 0.00830405717715621,
+      "seconds": 0.008030738215893507,
       "deviation": 7.263086457077434e-17
     },
     {
       "implementation": "ours:numpy:complex128:fusion",
       "qubits": 12,
       "gates": 492,
-      "seconds": 0.015084597747772932,
+      "seconds": 0.014600661117583513,
       "deviation": 7.196489415735147e-17
     },
     {
       "implementation": "ours:torch:cpu:complex128",
       "qubits": 12,
       "gates": 492,
-      "seconds": 0.011074315290898085,
+      "seconds": 0.011036843992769718,
       "deviation": 7.763977737614071e-17
     },
     {
       "implementation": "ours:torch:cpu:complex128:fusion",
       "qubits": 12,
       "gates": 492,
-      "seconds": 0.01571783423423767,
+      "seconds": 0.01546391798183322,
       "deviation": 7.196489415735147e-17
     },
     {
       "implementation": "qulacs:cpu:complex128",
       "qubits": 12,
       "gates": 492,
-      "seconds": 0.20072875078767538,
+      "seconds": 0.0022502392530441284,
       "deviation": 7.263086457077434e-17
     },
     {
       "implementation": "qiskit-aer:cpu:complex128",
       "qubits": 16,
       "gates": 656,
-      "seconds": 0.16531662736088037,
+      "seconds": 0.10055066598579288,
       "deviation": 0.0
     },
     {
       "implementation": "ours:numpy:complex128",
       "qubits": 16,
       "gates": 656,
-      "seconds": 0.7100069969892502,
-      "deviation": 2.706273739442901e-17
+      "seconds": 0.10224846890196204,
+      "deviation": 2.7081964523724515e-17
     },
     {
       "implementation": "ours:numpy:complex128:fusion",
       "qubits": 16,
       "gates": 656,
-      "seconds": 0.30911286175251007,
+      "seconds": 0.04763090796768665,
       "deviation": 2.5199246979110302e-17
     },
     {
       "implementation": "ours:torch:cpu:complex128",
       "qubits": 16,
       "gates": 656,
-      "seconds": 0.5061654089950025,
-      "deviation": 2.706273739442901e-17
+      "seconds": 0.09818206587806344,
+      "deviation": 2.7191652150379148e-17
     },
     {
       "implementation": "ours:torch:cpu:complex128:fusion",
       "qubits": 16,
       "gates": 656,
-      "seconds": 0.11961348401382565,
+      "seconds": 0.04635210707783699,
       "deviation": 2.5199246979110302e-17
     },
     {
       "implementation": "qulacs:cpu:complex128",
       "qubits": 16,
       "gates": 656,
-      "seconds": 0.11906462535262108,
-      "deviation": 2.706273739442901e-17
+      "seconds": 0.048431772738695145,
+      "deviation": 2.7081964523724515e-17
     },
     {
       "implementation": "qiskit-aer:cpu:complex128",
       "qubits": 20,
       "gates": 820,
-      "seconds": 0.4079966498538852,
+      "seconds": 1.8412738959304988,
       "deviation": 0.0
     },
     {
       "implementation": "ours:numpy:complex128",
       "qubits": 20,
       "gates": 820,
-      "seconds": 6.69523820001632,
+      "seconds": 2.322285016067326,
       "deviation": 8.865010406547378e-18
     },
     {
       "implementation": "ours:numpy:complex128:fusion",
       "qubits": 20,
       "gates": 820,
-      "seconds": 2.806948948651552,
+      "seconds": 0.7627487881109118,
       "deviation": 8.263441585638921e-18
     },
     {
       "implementation": "ours:torch:cpu:complex128",
       "qubits": 20,
       "gates": 820,
-      "seconds": 0.7830449054017663,
-      "deviation": 8.865010406547378e-18
+      "seconds": 2.723062904085964,
+      "deviation": 8.257438131976288e-18
     },
     {
       "implementation": "ours:torch:cpu:complex128:fusion",
       "qubits": 20,
       "gates": 820,
-      "seconds": 0.25056298915296793,
+      "seconds": 0.7404797622002661,
       "deviation": 8.263441585638921e-18
     },
     {
       "implementation": "qulacs:cpu:complex128",
       "qubits": 20,
       "gates": 820,
-      "seconds": 0.31306022591888905,
+      "seconds": 0.9460804439149797,
       "deviation": 8.865010406547378e-18
     },
     {
       "implementation": "qiskit-aer:cpu:complex128",
       "qubits": 24,
       "gates": 984,
-      "seconds": 6.799508484080434,
+      "seconds": 38.67967552598566,
       "deviation": 0.0
     },
     {
       "implementation": "ours:numpy:complex128",
       "qubits": 24,
       "gates": 984,
-      "seconds": 90.60268563311547,
+      "seconds": 83.69467997504398,
       "deviation": 2.4747374745180785e-18
     },
     {
       "implementation": "ours:numpy:complex128:fusion",
       "qubits": 24,
       "gates": 984,
-      "seconds": 38.06073793582618,
+      "seconds": 24.59463497903198,
       "deviation": 2.4918966487835594e-18
     },
     {
       "implementation": "ours:torch:cpu:complex128",
       "qubits": 24,
       "gates": 984,
-      "seconds": 57.33105154382065,
-      "deviation": 2.4747374745180785e-18
+      "seconds": 171.7392018600367,
+      "deviation": 2.569732123536715e-18
     },
     {
       "implementation": "ours:torch:cpu:complex128:fusion",
       "qubits": 24,
       "gates": 984,
-      "seconds": 24.40030289720744,
+      "seconds": 51.79606415703893,
       "deviation": 2.4918966487835594e-18
     },
     {
       "implementation": "qulacs:cpu:complex128",
       "qubits": 24,
       "gates": 984,
-      "seconds": 6.302664993796498,
+      "seconds": 26.973121541086584,
       "deviation": 2.4747374745180785e-18
     }
   ]

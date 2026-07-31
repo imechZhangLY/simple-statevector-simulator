@@ -98,9 +98,12 @@ for num_qubits in (16, 20, 24):
 
         axes = target_axes + remaining_axes
 
-        def reshape_matmul() -> torch.Tensor:
+        def reshape_matmul_output() -> torch.Tensor:
             batched = statevector.permute(axes).reshape(dimension, -1)
-            updated = matrix_tensor @ batched
+            return matrix_tensor @ batched
+
+        def reshape_matmul() -> torch.Tensor:
+            updated = reshape_matmul_output()
             return updated.reshape((2,) * num_qubits).permute(inverse_axes)
 
         output_axes = []
@@ -110,18 +113,21 @@ for num_qubits in (16, 20, 24):
             else:
                 output_axes.append(width + remaining_axes.index(axis))
 
-        def contract() -> torch.Tensor:
-            updated = torch.tensordot(
+        def contract_output() -> torch.Tensor:
+            return torch.tensordot(
                 matrix_axes,
                 statevector,
                 dims=(list(range(width, 2 * width)), target_axes),
             )
+
+        def contract() -> torch.Tensor:
+            updated = contract_output()
             return updated.permute(output_axes)
 
         reshape_ms, _ = benchmark(reshape_matmul)
-        expected_host = evaluate(reshape_matmul)
+        expected_host = evaluate(reshape_matmul_output)
         try:
-            actual_host = evaluate(contract)
+            actual_host = evaluate(contract_output).reshape(dimension, -1)
             torch.testing.assert_close(
                 actual_host,
                 expected_host,

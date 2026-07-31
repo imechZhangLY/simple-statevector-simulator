@@ -174,7 +174,44 @@ python experiments/test-tensordot-perf.py --device supa
 
 `test-as-strided-perf.py` 会同时验证 `as_strided` 是否与输入共享 storage、门计算结果是否与原实现一致，并比较包含矩阵乘法的完整耗时。该实验只构造能够严格表示为二维 stride `(1, 2)` 的 qubit 0 布局，不能直接推广到任意目标 qubit 集合。
 
-当前 SUPA 实测中，`as_strided` 本身能够创建共享 storage 的 view，但将该 view 传给矩阵乘法会触发 `SupaBroadcast` 维度错误。这表明当前 `torch_br` matmul 内核不能正确消费该 strided view，因此该方案暂时不能用于 SUPA 后端。实验脚本会将这种算子能力限制报告为 `unsupported`。
+当前 SUPA 实测中，`as_strided` 能够创建共享 storage 的 view，且该 view 可以直接参与矩阵乘法。16 qubits 时，`reshape + matmul` 为 2.546769 ms，`as_strided + matmul` 为 1.876100 ms，后者快约 26.3%。
+
+实测中的 `SupaBroadcast` 维度错误发生在将 inverse-permute 后的非连续多轴结果复制回 CPU，而不是发生在 `as_strided + matmul`。当前 `torch_br` 的 D2H copy 不能直接处理该 view；实验脚本因此在恢复多轴布局之前比较二维矩阵输出。这个限制不影响结果继续保留在 SUPA 上执行后续量子门，但会影响中间态的直接 CPU 读取。
+
+### Fusion benchmark 的 D2H 报错
+
+SUPA 上运行 fusion benchmark 时，20 qubits 及以上曾被标记为 `skipped`，24 qubits 的核心错误为：
+
+```text
+RuntimeError: The size of tensor a (2) must match the size of tensor b (512)
+at non-singleton dimension 15
+```
+
+20 qubits 的同类错误中 `tensor b` 的大小为 32。错误中的 512 并不表示 fusion 生成了 $2^9 \times 2^9$ 的 9-qubit 门：检查融合后电路可知，20 qubits 的 200 个 operation 和 24 qubits 的 240 个 operation 全部为双比特门。逐门调用 `torch.supa.synchronize()` 后，两种规模的所有 `StateVector.apply()` 也都执行成功：
+
+```text
+APPLY_OK 20 200
+APPLY_OK 24 240
+```
+
+失败只在随后读取 `state.amplitudes` 时出现。异常栈指向 `torch_br::utils::CopyD2H`，说明错误来自 SUPA 将 inverse-permute 产生的高维非连续 view 复制到 CPU，而不是门融合、融合矩阵或矩阵乘法。原来的 `TorchBackend.to_numpy()` 按以下顺序执行：
+
+```python
+amplitudes.detach().to(device="cpu", dtype=torch.complex128).reshape(-1)
+```
+
+这会要求 SUPA 先直接 D2H 复制非连续多轴 tensor。修复后先在设备端按逻辑轴顺序物化平坦布局，再执行 D2H：
+
+```python
+amplitudes.detach().reshape(-1).to(device="cpu", dtype=torch.complex128)
+```
+
+该复制只发生在显式读取 statevector 时，不会在逐门执行的热路径中增加整态复制。使用修复后的顺序重新运行相同融合电路，20 和 24 qubits 均成功返回一维 `numpy.complex128` 数组：
+
+```text
+READ_FIXED_OK 20 (1048576,) complex128
+READ_FIXED_OK 24 (16777216,) complex128
+```
 
 `test-tensordot-perf.py` 会比较当前的 `permute + reshape + matmul` 与不展平的 `tensordot`，并对单比特、非相邻双比特和非相邻三比特 workload 执行数值一致性检查。只有 SUPA 实测显示完整 contraction 更快时，才应替换后端热路径；CPU 结果不能代表 SUPA 算子实现。
 
