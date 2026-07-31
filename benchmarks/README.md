@@ -134,6 +134,34 @@ $n=20$ 时为 820 门。所有角度随机。
 
 基准环境与日常开发环境分开，避免 qulacs、qiskit-aer 等对比框架污染 `.venv-cpu`。三个基准环境定义在 [envs/](../envs/)：`bench-cpu`、`bench-cuda`、`bench-supa`，创建与激活方法见 [envs/README.md](../envs/README.md)。
 
+## SUPA 张量布局限制
+
+在 `.venv-bench-supa` 中运行以下实验，对比相同 PyTorch 张量布局操作在 SUPA 和 CPU 上的行为：
+
+```bash
+python experiments/test-reshape-perf.py --device supa
+python experiments/test-reshape-perf.py --device cpu
+```
+
+下表为每次操作的平均耗时，单位为毫秒。`共享 storage` 表示结果张量与输入 statevector 的底层 storage 地址相同，即操作没有复制振幅数据。
+
+| 设备 | 操作 | 16 qubits | 20 qubits | 24 qubits | 共享 storage |
+|---|---|---:|---:|---:|:---:|
+| SUPA | `reshape((2,) * num_qubits)` | 0.004595 | 0.004144 | 0.004328 | 是 |
+| SUPA | `reshape(2, -1)` | 0.011608 | 0.042867 | 0.473035 | 否 |
+| SUPA | `reshape(tensor).permute` | 0.006121 | 0.006620 | 0.006860 | 是 |
+| SUPA | `reshape(tensor).permute.reshape(2, -1)` | 0.581659 | 20.800177 | 168.789613 | 否 |
+| CPU | `reshape((2,) * num_qubits)` | 0.002126 | 0.001803 | 0.002606 | 是 |
+| CPU | `reshape(2, -1)` | 0.001062 | 0.001020 | 0.001012 | 是 |
+| CPU | `reshape(tensor).permute` | 0.003331 | 0.003456 | 0.004063 | 是 |
+| CPU | `reshape(tensor).permute.reshape(2, -1)` | 0.004755 | 0.004964 | 0.005283 | 是 |
+
+CPU 上四种操作都只是修改 shape、stride 等张量元数据，不复制底层数据，耗时基本不随 statevector 大小增长。SUPA 上保持每个 qubit 一个轴的 `reshape((2,) * num_qubits)` 和随后的 `permute` 同样是轻量 view；但展平为 `(2, -1)` 会创建新的 storage。
+
+限制在 `permute` 后尤其明显：24 qubits 时，`permute` 后再 `reshape(2, -1)` 需要约 168.79 ms，而单独 `permute` 仅约 0.0069 ms。这说明耗时来自 SUPA 对不兼容 stride 的展平和数据重排，而不是 `permute` 本身。
+
+因此 SUPA 后端应尽量让 statevector 始终保持 `(2,) * num_qubits` 的多轴形式，并保留 `permute` 返回的 view。热路径中应避免将 statevector 或 permuted view 展平；若矩阵乘法接口要求连续的二维输入，需要使用支持 strided tensor 的算子或融合 kernel，否则每个量子门都可能额外复制全部 $2^n$ 个振幅。
+
 ## 平台限制
 
 | 包 | 可用性 | 说明 |
