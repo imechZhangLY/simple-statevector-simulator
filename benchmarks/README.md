@@ -162,6 +162,20 @@ CPU 上四种操作都只是修改 shape、stride 等张量元数据，不复制
 
 因此 SUPA 后端应尽量让 statevector 始终保持 `(2,) * num_qubits` 的多轴形式，并保留 `permute` 返回的 view。热路径中应避免将 statevector 或 permuted view 展平；若矩阵乘法接口要求连续的二维输入，需要使用支持 strided tensor 的算子或融合 kernel，否则每个量子门都可能额外复制全部 $2^n$ 个振幅。
 
+仓库提供两个候选优化实验：
+
+```bash
+# 对 qubit 0 的单比特门，用显式二维 stride 绕过 reshape 复制
+python experiments/test-as-strided-perf.py --device supa
+
+# 对单、双、三比特门，直接在多轴张量上 contraction，避免二维展平
+python experiments/test-tensordot-perf.py --device supa
+```
+
+`test-as-strided-perf.py` 会同时验证 `as_strided` 是否与输入共享 storage、门计算结果是否与原实现一致，并比较包含矩阵乘法的完整耗时。该实验只构造能够严格表示为二维 stride `(1, 2)` 的 qubit 0 布局，不能直接推广到任意目标 qubit 集合。
+
+`test-tensordot-perf.py` 会比较当前的 `permute + reshape + matmul` 与不展平的 `tensordot`，并对单比特、非相邻双比特和非相邻三比特 workload 执行数值一致性检查。只有 SUPA 实测显示完整 contraction 更快时，才应替换后端热路径；CPU 结果不能代表 SUPA 算子实现。
+
 ## 平台限制
 
 | 包 | 可用性 | 说明 |
