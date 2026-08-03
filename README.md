@@ -4,7 +4,7 @@
 
 ## 设计动机
 
-statevector 模拟的核心计算，本质上就是稠密矩阵乘法。$n$ qubit 的态是长度 $2^n$ 的复向量，对其中 $k$ 个 qubit 施加量子门，等价于把振幅重排成 $2^k \times 2^{n-k}$ 的矩阵后左乘一个 $2^k \times 2^k$ 的酉矩阵——在 [src/torch_backend.py](src/torch_backend.py) 里就是 `matrix @ batched_amplitudes` 这一行，其余都是轴置换。
+statevector 模拟的核心计算，本质上就是稠密矩阵乘法。 $n$ qubit 的态是长度 $2^n$ 的复向量，对其中 $k$ 个 qubit 施加量子门，等价于把振幅重排成 $2^k \times 2^{n-k}$ 的矩阵后左乘一个 $2^k \times 2^k$ 的酉矩阵——在 [src/torch_backend.py](src/torch_backend.py) 里就是 `matrix @ batched_amplitudes` 这一行，其余都是轴置换。
 
 这正是机器学习领域被打磨得最充分的一类运算。多年来大量研究者和工程师围绕 GPU 上的矩阵乘法做了深度优化：kernel 融合、访存布局、混合精度、批处理调度。这些成果与量子门的数学形式高度吻合，因此不必自己写 CUDA kernel，直接把 PyTorch 当作后端就能继承整条已经成熟的加速链路。
 
